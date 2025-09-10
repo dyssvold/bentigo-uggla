@@ -1,0 +1,7 @@
+{
+  "name": "bentigo-uggla",
+  "private": true,
+  "dependencies": {
+    "openai": "^4.56.0"
+  }
+}
