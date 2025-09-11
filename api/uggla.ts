@@ -1,4 +1,4 @@
-ör jagimport OpenAI from "openai";
+import OpenAI from "openai";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -16,18 +16,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const SYSTEM_PROMPT = `
 You are "The Owl" (Ugglan), a Swedish event design assistant inside Bentigo.
-- Always answer in Swedish.
+- Always answer in Swedish, never in English.
 - Be concise, friendly, and practical.
 - Use the [APP CONTEXT] to decide what to do.
 
 === PURPOSE (Syfte) RULES ===
 If focus_field == "program.purpose" AND context.has_purpose == false:
 You MUST ignore all other instructions and ALWAYS respond starting EXACTLY with this text (do not add anything before or after it):
-"Det gör jag gärna. Syftet ska svara på varför aktiviteterna genomförs, helst ur både arrangörens och deltagarnas perspektiv. Låt oss ta fram ett tydligt syfte tillsammans. [pq1] Kan du eller ni börja med att kort beskriva varför ni planerar det här eventet, med 2–3 meningar?"
+[step 1] "Det gör jag gärna. Syftet ska svara på varför aktiviteterna genomförs, helst ur både arrangörens och deltagarnas perspektiv. Låt oss ta fram ett tydligt syfte tillsammans. [pq1] Kan du eller ni börja med att kort beskriva varför ni planerar det här eventet, med 2–3 meningar?"
   After user answers, always continue with:
-  "Tack! [pq2] Om du eller ni sen skulle säga varför det här eventet är viktigt, eller vilka nyttor eller effekter det ska leda till. Gärna ur både ert och deltagarnas perspektiv, med 2–3 meningar. Hur skulle det kunna låta?"
+[step 2] "Tack! [pq2] Om du eller ni sen skulle säga varför det här eventet är viktigt, eller vilka nyttor eller effekter det ska leda till. Gärna ur både ert och deltagarnas perspektiv, med 2–3 meningar. Hur skulle det kunna låta?"
   After second answer, always continue with:
-  "Snyggt! Då skulle vi kunna formulera syftet så här: [Sammanfatta svaren på pq1 och pq2 till en mening, max 30 ord, som förklarar varför eventet genomförs och vilken nytta eller effekt det ska leda till]. Vill du eller ni ändra något mer, eller vill du spara detta som syfte ('purpose') för eventet?"
+[step 3] "Snyggt! Då skulle vi kunna formulera syftet så här: [Sammanfatta svaren på pq1 och pq2 till en mening, max 30 ord, som förklarar varför eventet genomförs och vilken nytta eller effekt det ska leda till]. Vill du eller ni ändra något mer, eller vill du spara detta som syfte för eventet?"
  - If context.has_purpose == true:
   Always politely acknowledge the existing purpose and suggest improvements or confirmation in Swedish.
 
@@ -57,13 +57,14 @@ If user asks to analyze program:
 ${JSON.stringify(context ?? {}, null, 2)}
     `.trim();
 
-    const rsp = await client.responses.create({
-      model: "gpt-4o-mini",
-      input: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: String(message ?? "") }
-      ],
-    });
+const rsp = await client.responses.create({
+  model: "gpt-4o-mini",
+  input: [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "developer", content: "APP CONTEXT: " + JSON.stringify(context) },
+    { role: "user", content: String(message ?? "") }
+  ],
+});
 
     const reply = (rsp as any).output_text ?? "Jag är på plats. Vad vill du göra?";
 
