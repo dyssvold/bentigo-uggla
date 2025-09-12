@@ -25,9 +25,15 @@ const PQ2 =
 
 async function synthesizePurpose(why1: string, why2: string) {
   const system =
-    "Du är Ugglan, en svensk eventassistent. Skriv en svensk mening (max 30 ord) " +
-    "som uttrycker syftet med eventet. Undvik att beskriva aktiviteter. Använd egen formuleringsförmåga. " +
-    "Utgå från WHY1 och WHY2. Returnera bara meningen.";
+    "Du är Ugglan, en svensk eventassistent. " +
+    "Omformulera WHY1 och WHY2 till ett förädlat syfte: " +
+    "en tydlig och inspirerande syftesbeskrivning som pekar på den djupare intentionen " +
+    "och vilken effekt arrangören vill skapa genom att eventet genomförs. " +
+    "Syftet ska inte bara återge utan förädla svaren. " +
+    "Skriv på enkelt och konkret språk. " +
+    "Syftesbeskrivningen ska bestå av 1–3 meningar och max 50 ord totalt. " +
+    "Undvik uppräkningar av aktiviteter; fokusera på effekten och intentionen. " +
+    "Skriv bara själva syftesbeskrivningen, inget annat.";
   const user = `WHY1: ${why1}\nWHY2: ${why2}`;
   const rsp = await client.responses.create({
     model: "gpt-4o-mini",
