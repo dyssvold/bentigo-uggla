@@ -22,8 +22,12 @@ function q(id: string, text: string) {
 
 async function synthesizeAudience(state: Required<AudienceBody>["state"]) {
   const system =
-    `Du är Ugglan. Skriv en kort svensk deltagarprofil (2–3 meningar). ` +
-    `Integrera WHO, NEEDS, SPECIAL och ARCHETYPE. Skriv i neutralt tonfall.`;
+  "Du är Ugglan. Skriv en kort svensk deltagarprofil (2–3 meningar). " +
+  "Använd enkelt och vardagligt språk. Undvik svåra ord som 'beakta' eller 'variabilitet'. " +
+  "Skriv hellre uttryck som 'kom ihåg att tänka på...' eller 'det kan vara bra att...' " +
+  "När du beskriver ARCHETYPE: skriv aldrig att deltagarna är 'klassificerade som' en typ. " +
+  "Skriv istället att deltagarprofilen kan luta mot typen, och förklara kort vad det innebär i praktiken. " +
+  "Exempel: 'Deltagarprofilen kan luta mot typen Interaktörer, vilket gör att vi bör ha med flera inslag av interaktion och samarbete.'";
 
   const user =
     `WHO: ${state.who}\nNEEDS: ${state.needs}\nSPECIAL: ${state.special}\nARCHETYPE: ${state.archetype}`;
