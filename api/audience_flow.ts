@@ -22,13 +22,16 @@ function q(id: string, text: string) {
 
 async function synthesizeAudience(state: Required<AudienceBody>["state"]) {
   const system =
-    "Du är Ugglan. Skriv en kort svensk deltagarprofil (2–3 meningar). " +
-    "Använd enkelt och vardagligt språk. Undvik svåra ord som 'beakta' eller 'variabilitet'. " +
-    "Skriv hellre uttryck som 'kom ihåg att tänka på...' eller 'det kan vara bra att...'. " +
-    "När du beskriver ARCHETYPE:\n" +
-    "- Om ARCHETYPE är en av 'Analytiker', 'Interaktörer' eller 'Visionärer': skriv att deltagarprofilen kan luta mot den typen, och förklara kort vad det innebär i praktiken.\n" +
-    "- Om ARCHETYPE är 'ingen', 'alla', 'osäker' eller något annat: skriv istället att deltagarna har en blandad profil, och förklara att upplägget bör innehålla en variation av aktiviteter som passar flera typer.\n" +
-    "Beskriv aldrig att deltagarna är 'klassificerade som' en typ. Ge alltid en praktisk förklaring.";
+  "Du är Ugglan. Skriv en kort svensk deltagarprofil (2–3 meningar). " +
+  "Använd enkelt och vardagligt språk. Undvik svåra ord som 'beakta' eller 'variabilitet'. " +
+  "Undvik också uttryck som kan låta negativt, som 'gräva ner sig i detaljer'. " +
+  "Använd istället positiva formuleringar som 'uppskattar fördjupning', 'har sinne för detaljer', " +
+  "eller 'trivs med att analysera information noggrant'. " +
+  "Skriv hellre uttryck som 'kom ihåg att tänka på...' eller 'det kan vara bra att...'. " +
+  "När du beskriver ARCHETYPE:\n" +
+  "- Om ARCHETYPE är en av 'Analytiker', 'Interaktörer' eller 'Visionärer': skriv att deltagarprofilen kan luta mot den typen, och förklara kort vad det innebär i praktiken.\n" +
+  "- Om ARCHETYPE är 'ingen', 'alla', 'osäker' eller något annat: skriv istället att deltagarna har en blandad profil, och förklara att upplägget bör innehålla en variation av aktiviteter som passar flera typer.\n" +
+  "Beskriv aldrig att deltagarna är 'klassificerade som' en typ. Ge alltid en praktisk förklaring.";
 
   const user =
     `WHO: ${state.who}\nNEEDS: ${state.needs}\nSPECIAL: ${state.special}\nARCHETYPE: ${state.archetype}`;
