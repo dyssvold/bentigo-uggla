@@ -5,7 +5,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 type PurposeBody = {
-  step: 0 | 1 | 2;
+  step: 0 | 1 | 2 | "final_edit";
   input?: string;
   state?: { why1?: string };
   context?: { program_id?: string | null; has_purpose?: boolean | null };
@@ -37,14 +37,11 @@ async function synthesizePurpose(why1: string, why2: string) {
     "Beskriv i stället med vanliga ord som 'öka motivationen', 'att arbetet känns mer inspirerande', 'stärka gemenskapen'. " +
     "Undvik uppräkningar av aktiviteter; fokusera på effekten och intentionen. " +
     "Skriv bara själva syftesbeskrivningen, inget annat.";
-    
+
   const user = `WHY1: ${why1}\nWHY2: ${why2}`;
   const rsp = await client.responses.create({
     model: "gpt-4o-mini",
-    input: [
-      { role: "system", content: system },
-      { role: "user", content: user }
-    ],
+    input: [{ role: "system", content: system }, { role: "user", content: user }],
   });
   return (rsp as any).output_text?.trim() || "";
 }
@@ -69,18 +66,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (hasPurpose === true && step === 0) {
       return res.status(200).json({
         ok: true,
-        ui: [
-          {
-            role: "assistant",
-            id: "purpose_refine_intro",
-            text: "Eventet har redan ett syfte. Vill ni förtydliga eller omformulera det?"
-          }
-        ],
+        ui: [{ role: "assistant", id: "purpose_refine_intro", text: "Eventet har redan ett syfte. Vill ni förtydliga eller omformulera det?" }],
         next_step: "refine_prompt",
       });
     }
 
-    // Steg 0: Fråga första frågan (pq1)
     if (step === 0) {
       return res.status(200).json({
         ok: true,
@@ -89,7 +79,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Steg 1: Mottog svar på pq1 → fråga pq2
     if (step === 1) {
       if (!input) return res.status(400).json({ error: "Missing input (why1)" });
       return res.status(200).json({
@@ -100,7 +89,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Steg 2: Mottog svar på pq2 → generera slutligt syfte
     if (step === 2) {
       if (!input) return res.status(400).json({ error: "Missing input (why2)" });
       if (!state?.why1) return res.status(400).json({ error: "Missing why1" });
@@ -116,6 +104,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ok: true,
         ui: [{ role: "assistant", id: "purpose_final", text: finalMsg }],
         data: { purpose_candidate: purpose },
+        actions: [{ type: "offer_edit_or_save", field: "purpose" }],
+        next_step: "done"
+      });
+    }
+
+    // Hantera final_edit (när användaren redigerar ett syftesförslag manuellt)
+    if (step === "final_edit") {
+      if (!input) return res.status(400).json({ error: "Missing edited purpose" });
+
+      const finalMsg =
+        `Uppdaterat förslag på syfte:\n\n` +
+        `**${input}**\n\n` +
+        `Vill du eller ni ändra något mer, eller ska vi spara detta som syfte?`;
+
+      return res.status(200).json({
+        ok: true,
+        ui: [{ role: "assistant", id: "purpose_final_edit", text: finalMsg }],
+        data: { purpose_candidate: input },
         actions: [{ type: "offer_edit_or_save", field: "purpose" }],
         next_step: "done"
       });
