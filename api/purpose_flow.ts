@@ -12,7 +12,7 @@ type PurposeBody = {
 };
 
 const PQ1 =
-  "Vad roligt att få hjälpa till med beskrivning av syftet. Det kommer guida oss till att senare kunna välja rätt aktiviteter.\n\n" +
+  "Ett tydligt syfte är avgörande för ett lyckat event. Det fungerar som en kompass i viktiga vägval, exempelvis vilka aktiviteter vi bör välja.\n\n" +
   "Syftet ska svara på **varför** ett event genomförs. Helst ur både arrangörens och deltagarnas perspektiv.\n\n" +
   "Börja med en kort beskrivning av varför det här eventet planeras?";
 
