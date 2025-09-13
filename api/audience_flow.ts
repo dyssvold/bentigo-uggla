@@ -5,7 +5,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 type AudienceBody = {
-  step: 0 | 1 | 2 | 3 | 4;
+  step: 0 | 1 | 2 | 3 | 4 | "final_edit";
   input?: string;
   state?: {
     who?: string;
@@ -68,7 +68,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (step === 0) {
       return res.status(200).json({
         ok: true,
-        ui: q("audience_pq1", 
+        ui: q("audience_pq1",
           "Lyckade event bygger på formeln: **varför** och **för vem** ger svar på **var**, **när** och **vad**.\n\n" +
           "Nu ska vi göra en bra deltagarbeskrivning, som senare kan guida oss till rätt upplägg och aktiviteter.\n\n" +
           "Kan du eller ni ge mig en kort beskrivning av vilka de förväntade deltagarna är?"
@@ -81,7 +81,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!input) return res.status(400).json({ error: "Missing input (who)" });
       return res.status(200).json({
         ok: true,
-        ui: q("audience_pq2", 
+        ui: q("audience_pq2",
           "Tack! Finns det några särskilda behov, önskningar eller förväntningar deltagarna kan ha? " +
           "Exempelvis aktiviteter de gillar, saker de vill lära sig mer om, få chans att träna på eller något annat?"
         ),
@@ -94,7 +94,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!input) return res.status(400).json({ error: "Missing input (needs)" });
       return res.status(200).json({
         ok: true,
-        ui: q("audience_pq3", 
+        ui: q("audience_pq3",
           "Finns det andra detaljer, exempelvis önskemål i utvärderingar från tidigare som vi bör ha koll på?"
         ),
         state: { ...state, needs: input },
@@ -106,7 +106,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!input) return res.status(400).json({ error: "Missing input (special)" });
       return res.status(200).json({
         ok: true,
-        ui: q("audience_pq4", 
+        ui: q("audience_pq4",
           "En sista fråga!\n\n" +
           "Bentigo bygger på tre deltagartyper:\n" +
           "- **Analytiker** *(jobbar och tänker gärna enskilt, strukturerat)*\n" +
@@ -132,6 +132,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ok: true,
         ui: [{ role: "assistant", id: "audience_final", text: finalMsg }],
         data: { audience_candidate: profile },
+        actions: [{ type: "offer_edit_or_save", field: "audience_profile" }],
+        next_step: "done"
+      });
+    }
+
+    // Hantera final_edit (när användaren redigerar en deltagarprofil manuellt)
+    if (step === "final_edit") {
+      if (!input) return res.status(400).json({ error: "Missing edited audience profile" });
+
+      const finalMsg =
+        `Uppdaterat förslag på deltagarbeskrivning:\n\n${input}\n\n` +
+        `Vill du eller ni ändra något mer, eller ska vi spara denna deltagarbeskrivning?`;
+
+      return res.status(200).json({
+        ok: true,
+        ui: [{ role: "assistant", id: "audience_final_edit", text: finalMsg }],
+        data: { audience_candidate: input },
         actions: [{ type: "offer_edit_or_save", field: "audience_profile" }],
         next_step: "done"
       });
