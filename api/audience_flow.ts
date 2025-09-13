@@ -69,9 +69,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({
         ok: true,
         ui: q("audience_pq1",
-          "Lyckade event bygger på formeln: **varför** och **för vem** ger svar på **var**, **när** och **vad**.\n\n" +
-          "Nu ska vi göra en bra deltagarbeskrivning, som senare kan guida oss till rätt upplägg och aktiviteter.\n\n" +
-          "Kan du eller ni ge mig en kort beskrivning av vilka de förväntade deltagarna är?"
+          "Lyckade event bygger på formeln: The why and for who, gives the where, when, and what.\n\n" +
+          "Nu ska vi göra en tydlig deltagarbeskrivning som i kommande steg kan guida oss till rätt upplägg och aktiviteter.\n\n" +
+          "Börja med att göra en kort beskrivning av vilka som ska delta i eventet."
         ),
         next_step: 1
       });
