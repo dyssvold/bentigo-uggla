@@ -22,12 +22,13 @@ function q(id: string, text: string) {
 
 async function synthesizeAudience(state: Required<AudienceBody>["state"]) {
   const system =
-  "Du är Ugglan. Skriv en kort svensk deltagarprofil (2–3 meningar). " +
-  "Använd enkelt och vardagligt språk. Undvik svåra ord som 'beakta' eller 'variabilitet'. " +
-  "Skriv hellre uttryck som 'kom ihåg att tänka på...' eller 'det kan vara bra att...' " +
-  "När du beskriver ARCHETYPE: skriv aldrig att deltagarna är 'klassificerade som' en typ. " +
-  "Skriv istället att deltagarprofilen kan luta mot typen, och förklara kort vad det innebär i praktiken. " +
-  "Exempel: 'Deltagarprofilen kan luta mot typen Interaktörer, vilket gör att vi bör ha med flera inslag av interaktion och samarbete.'";
+    "Du är Ugglan. Skriv en kort svensk deltagarprofil (2–3 meningar). " +
+    "Använd enkelt och vardagligt språk. Undvik svåra ord som 'beakta' eller 'variabilitet'. " +
+    "Skriv hellre uttryck som 'kom ihåg att tänka på...' eller 'det kan vara bra att...'. " +
+    "När du beskriver ARCHETYPE:\n" +
+    "- Om ARCHETYPE är en av 'Analytiker', 'Interaktörer' eller 'Visionärer': skriv att deltagarprofilen kan luta mot den typen, och förklara kort vad det innebär i praktiken.\n" +
+    "- Om ARCHETYPE är 'ingen', 'alla', 'osäker' eller något annat: skriv istället att deltagarna har en blandad profil, och förklara att upplägget bör innehålla en variation av aktiviteter som passar flera typer.\n" +
+    "Beskriv aldrig att deltagarna är 'klassificerade som' en typ. Ge alltid en praktisk förklaring.";
 
   const user =
     `WHO: ${state.who}\nNEEDS: ${state.needs}\nSPECIAL: ${state.special}\nARCHETYPE: ${state.archetype}`;
@@ -59,7 +60,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (hasAudience === true && step === 0) {
       return res.status(200).json({
         ok: true,
-        ui: [{ role: "assistant", id: "audience_refine_intro", text: "Eventet har redan en deltagarbeskrivning. Vill ni förtydliga eller definiera om den?" }],
+        ui: [{ role: "assistant", id: "audience_refine_intro", text: "Eventet har redan en deltagarbeskrivning. Vill du eller ni förtydliga eller ändra på den?" }],
         next_step: "refine_prompt",
       });
     }
@@ -67,7 +68,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (step === 0) {
       return res.status(200).json({
         ok: true,
-        ui: q("audience_pq1", "Lyckade event bygger på formeln: varför och för vem ger svaret på var, när och vad. Låt oss nu beskriva för vem eventet planeras, så att vi sedan kan välja upplägg och aktiviteter på ett bättre sätt. Beskriv vilka de förväntade deltagarna är, med 2–3 meningar."),
+        ui: q("audience_pq1", 
+          "Lyckade event bygger på formeln: **varför** och **för vem** ger svar på **var**, **när** och **vad**.\n\n" +
+          "Nu ska vi göra en bra deltagarbeskrivning, som senare kan guida oss till rätt upplägg och aktiviteter.\n\n" +
+          "Kan du eller ni ge mig en kort beskrivning av vilka de förväntade deltagarna är?"
+        ),
         next_step: 1
       });
     }
@@ -76,7 +81,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!input) return res.status(400).json({ error: "Missing input (who)" });
       return res.status(200).json({
         ok: true,
-        ui: q("audience_pq2", "Tack! Har du eller ni någon idé om några särskilda behov, önskningar eller förväntningar dessa kan ha? Exempelvis aktiviteter de gillar, saker de vill lära sig mer om, få chans att träna på eller annat. Beskriv med några meningar."),
+        ui: q("audience_pq2", 
+          "Tack! Finns det några särskilda behov, önskningar eller förväntningar deltagarna kan ha? " +
+          "Exempelvis aktiviteter de gillar, saker de vill lära sig mer om, få chans att träna på eller något annat?"
+        ),
         state: { ...state, who: input },
         next_step: 2
       });
@@ -86,7 +94,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!input) return res.status(400).json({ error: "Missing input (needs)" });
       return res.status(200).json({
         ok: true,
-        ui: q("audience_pq3", "Tack! Finns det några andra detaljer, exempelvis önskemål i utvärderingar från tidigare, eller andra hänsyn vi bör ha koll på?"),
+        ui: q("audience_pq3", 
+          "Finns det andra detaljer, exempelvis önskemål i utvärderingar från tidigare som vi bör ha koll på?"
+        ),
         state: { ...state, needs: input },
         next_step: 3
       });
@@ -96,7 +106,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!input) return res.status(400).json({ error: "Missing input (special)" });
       return res.status(200).json({
         ok: true,
-        ui: q("audience_pq4", "Bentigo bygger på tre deltagartyper: Analytiker (jobbar och tänker gärna enskilt, strukturerat), Interaktörer (jobbar och tänker gärna tillsammans, mer spontant), och Visionärer (jobbar och tänker gärna på systemnivå, med tydligt syfte och verkliga utmaningar). Skulle du/ni säga att någon av dessa grupper kommer vara i majoritet, och i så fall vilken?"),
+        ui: q("audience_pq4", 
+          "En sista fråga!\n\n" +
+          "Bentigo bygger på tre deltagartyper:\n" +
+          "- **Analytiker** *(jobbar och tänker gärna enskilt, strukturerat)*\n" +
+          "- **Interaktörer** *(jobbar och tänker gärna tillsammans, mer spontant)*\n" +
+          "- **Visionärer** *(jobbar och tänker gärna på systemnivå, med tydligt syfte och verkliga utmaningar)*\n\n" +
+          "Tror du eller ni att någon eller några av dessa kommer vara i majoritet? Ange i så fall vilken."
+        ),
         state: { ...state, special: input },
         next_step: 4
       });
@@ -106,12 +123,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!input) return res.status(400).json({ error: "Missing input (archetype)" });
       const fullState = { ...state, archetype: input } as Required<AudienceBody>["state"];
       const profile = await synthesizeAudience(fullState);
-      const finalMsg = `Då föreslår jag att vi gör denna deltagarbeskrivning:\n${profile}\n\nVill du spara den?`;
+
+      const finalMsg =
+        `Då föreslår jag denna deltagarbeskrivning:\n\n${profile}\n\n` +
+        `Vill du eller ni ändra något, eller ska vi spara denna deltagarbeskrivning?`;
+
       return res.status(200).json({
         ok: true,
         ui: [{ role: "assistant", id: "audience_final", text: finalMsg }],
         data: { audience_candidate: profile },
-        actions: [{ type: "offer_save", field: "audience_profile" }],
+        actions: [{ type: "offer_edit_or_save", field: "audience_profile" }],
         next_step: "done"
       });
     }
