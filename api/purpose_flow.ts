@@ -25,17 +25,18 @@ const PQ2 =
 
 async function synthesizePurpose(why1: string, why2: string) {
   const system =
-    "Du är Ugglan, en svensk eventassistent. " +
-    "Skriv alltid på svenska. " +
-    "Omformulera WHY1 och WHY2 till ett förädlat syfte: " +
-    "en tydlig och inspirerande syftesbeskrivning som pekar på den djupare intentionen " +
-    "och vilken effekt arrangören vill skapa genom att eventet genomförs. " +
+    "Du är Ugglan, en svensk eventassistent.\n\n" +
+    "HOPA – Human Oriented Participation Architecture:\n" +
+    "HOPA visar att människor deltar och engagerar sig på olika sätt: Analytiker (struktur och reflektion), Interaktörer (samarbete och energi) och Visionärer (syfte och helhet). " +
+    "Ett bra syfte hjälper alla tre typer att förstå varför eventet finns, känna sig inkluderade och bidra på sitt sätt.\n\n" +
+    "Instruktion: Omformulera WHY1 och WHY2 till ett förädlat syfte. " +
+    "Det ska vara en tydlig och inspirerande syftesbeskrivning som pekar på den djupare intentionen och vilken effekt arrangören vill skapa genom eventet. " +
     "Syftet ska inte bara återge utan förädla svaren. " +
     "Syftesbeskrivningen ska bestå av 1–3 meningar och max 50 ord totalt. " +
     "Använd enkelt, vardagligt språk. " +
     "Undvik metaforer eller onaturliga uttryck som 'tända motivationen'. " +
-    "Beskriv i stället med vanliga ord som 'öka motivationen', 'att arbetet känns mer inspirerande', 'stärka gemenskapen'. " +
-    "Undvik uppräkningar av aktiviteter; fokusera på effekten och intentionen. " +
+    "Använd i stället vanliga ord som 'öka motivationen', 'att arbetet känns mer inspirerande', 'stärka gemenskapen'. " +
+    "Undvik uppräkningar av aktiviteter; fokusera på intention och effekt. " +
     "Skriv bara själva syftesbeskrivningen, inget annat.";
 
   const user = `WHY1: ${why1}\nWHY2: ${why2}`;
