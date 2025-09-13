@@ -22,16 +22,23 @@ function q(id: string, text: string) {
 
 async function synthesizeAudience(state: Required<AudienceBody>["state"]) {
   const system =
-  "Du är Ugglan. Skriv en kort svensk deltagarprofil (2–3 meningar). " +
-  "Använd enkelt och vardagligt språk. Undvik svåra ord som 'beakta' eller 'variabilitet'. " +
-  "Undvik också uttryck som kan låta negativt, som 'gräva ner sig i detaljer'. " +
-  "Använd istället positiva formuleringar som 'uppskattar fördjupning', 'har sinne för detaljer', " +
-  "eller 'trivs med att analysera information noggrant'. " +
-  "Skriv hellre uttryck som 'kom ihåg att tänka på...' eller 'det kan vara bra att...'. " +
-  "När du beskriver ARCHETYPE:\n" +
-  "- Om ARCHETYPE är en av 'Analytiker', 'Interaktörer' eller 'Visionärer': skriv att deltagarprofilen kan luta mot den typen, och förklara kort vad det innebär i praktiken.\n" +
-  "- Om ARCHETYPE är 'ingen', 'alla', 'osäker' eller något annat: skriv istället att deltagarna har en blandad profil, och förklara att upplägget bör innehålla en variation av aktiviteter som passar flera typer.\n" +
-  "Beskriv aldrig att deltagarna är 'klassificerade som' en typ. Ge alltid en praktisk förklaring.";
+    "Du är Ugglan, en svensk eventassistent.\n\n" +
+    "HOPA – Human Oriented Participation Architecture:\n" +
+    "HOPA är en modell för att designa möten och event så att fler deltagare kan känna sig inkluderade, trygga och engagerade. " +
+    "Människor tar till sig, deltar och bidrar på olika sätt, och därför är det viktigt att utgå från olika deltagartyper.\n\n" +
+    "Tre deltagartyper (arketyper):\n" +
+    "- **Analytiker** – uppskattar struktur, tydliga ramar och att tänka enskilt. De gillar fördjupning, detaljer och reflektion. Viktigt med tid, struktur och lugna återhämtningsmöjligheter.\n" +
+    "- **Interaktörer** – trivs bäst när de får tänka tillsammans, prata, testa och samarbeta. De får energi av interaktion, rörelse och gemensamt skapande. Viktigt med inslag där de är aktiva.\n" +
+    "- **Visionärer** – gillar att tänka stort, koppla syfte till verkliga utmaningar och se helheten. De drivs av mening, systemperspektiv och relevans. Viktigt att visa syftet, nyttan och verklighetsanknytningen.\n\n" +
+    "Principer: blanda aktiviteter för att passa alla tre typer. Undvik att utgå från en norm. Skapa trygghet först. Anpassa efter olika funktionssätt och variera energi.\n\n" +
+    "Instruktion för texten: skriv en kort svensk deltagarprofil (2–3 meningar) baserat på användarens input (WHO, NEEDS, SPECIAL, ARCHETYPE). " +
+    "Använd enkelt och vardagligt språk. Undvik svåra ord som 'beakta' eller 'variabilitet'. " +
+    "Undvik också uttryck som kan låta negativt, som 'gräva ner sig i detaljer'. " +
+    "Använd istället positiva formuleringar som 'uppskattar fördjupning', 'har sinne för detaljer' eller 'trivs med att analysera information noggrant'. " +
+    "När du beskriver ARCHETYPE:\n" +
+    "- Om ARCHETYPE är en av 'Analytiker', 'Interaktörer' eller 'Visionärer': skriv att deltagarprofilen kan luta mot den typen, och förklara kort vad det innebär i praktiken.\n" +
+    "- Om ARCHETYPE är 'ingen', 'alla', 'osäker' eller något annat: skriv istället att deltagarna har en blandad profil och förklara att upplägget bör innehålla variation.\n" +
+    "Beskriv aldrig att deltagarna är 'klassificerade som' en typ. Ge alltid en praktisk förklaring.";
 
   const user =
     `WHO: ${state.who}\nNEEDS: ${state.needs}\nSPECIAL: ${state.special}\nARCHETYPE: ${state.archetype}`;
@@ -72,9 +79,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({
         ok: true,
         ui: q("audience_pq1",
-          "Lyckade event bygger på formeln: The why and for who, gives the where, when, and what.\n\n" +
+          "Lyckade event bygger på formeln: **varför** och **för vem** ger svar på **var**, **när** och **vad**.\n\n" +
           "Nu ska vi göra en tydlig deltagarbeskrivning som i kommande steg kan guida oss till rätt upplägg och aktiviteter.\n\n" +
-          "Börja med att göra en kort beskrivning av vilka som ska delta i eventet."
+          "Börja med att kort beskriva vilka som ska delta i eventet."
         ),
         next_step: 1
       });
@@ -140,7 +147,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Hantera final_edit (när användaren redigerar en deltagarprofil manuellt)
     if (step === "final_edit") {
       if (!input) return res.status(400).json({ error: "Missing edited audience profile" });
 
