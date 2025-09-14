@@ -44,3 +44,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: String(err?.message ?? err) });
   }
 }
+
+// This endpoint searches the Tipsbank in Supabase
