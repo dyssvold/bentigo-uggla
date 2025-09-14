@@ -2,7 +2,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-// Initiera Supabase-klient med PUBLIC anon key (inte service role key)
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_ANON_KEY!
@@ -22,18 +21,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // Läs query antingen från body eller query-param
+    // Försök alltid parsa body korrekt
     let body: any = {};
-    if (typeof req.body === "string" && req.body.trim() !== "") {
-      try {
-        body = JSON.parse(req.body);
-      } catch {
-        body = {};
+    if (req.body) {
+      if (typeof req.body === "string") {
+        try {
+          body = JSON.parse(req.body);
+        } catch {
+          body = {};
+        }
+      } else {
+        body = req.body;
       }
-    } else {
-      body = req.body ?? {};
     }
 
+    // Tillåt även query-param
     const query =
       body?.query ||
       (typeof req.query.query === "string" ? req.query.query : null);
@@ -44,7 +46,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .json({ error: "Missing 'query'. Provide it in JSON body or query param." });
     }
 
-    // Sök i tabellen Tipsbank (title + content + tags)
+    // Kör sökning i Supabase
     const { data, error } = await supabase
       .from("Tipsbank")
       .select("id, title, content, tags")
