@@ -21,45 +21,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // Försök alltid parsa body korrekt
-    let body: any = {};
-    if (req.body) {
-      if (typeof req.body === "string") {
-        try {
-          body = JSON.parse(req.body);
-        } catch {
-          body = {};
-        }
-      } else {
-        body = req.body;
-      }
-    }
-
-    // Tillåt även query-param
-    const query =
-      body?.query ||
-      (typeof req.query.query === "string" ? req.query.query : null);
-
+    const { query } = req.body ?? {};
     if (!query || typeof query !== "string") {
-      return res
-        .status(400)
-        .json({ error: "Missing 'query'. Provide it in JSON body or query param." });
+      return res.status(400).json({ error: "Missing query string" });
     }
 
-    // Kör sökning i Supabase
     const { data, error } = await supabase
       .from("Tipsbank")
-      .select("id, title, content, tags")
-      .or(
-        `title.ilike.%${query}%,content.ilike.%${query}%,tags.ilike.%${query}%`
-      )
+      .select("id, title, content, tags, source, created_at")
+      .or(`title.ilike.%${query}%,content.ilike.%${query}%,tags.ilike.%${query}%`)
+      .order("created_at", { ascending: false })
       .limit(5);
 
     if (error) throw error;
 
     return res.status(200).json({
       ok: true,
-      results: data ?? [],
+      results: data ?? []
     });
   } catch (err: any) {
     return res.status(500).json({ error: String(err?.message ?? err) });
