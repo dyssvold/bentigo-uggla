@@ -22,27 +22,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { query } = req.body ?? {};
+    // Säkerställ att vi alltid har en JSON-body
+    let body: any = {};
+    if (typeof req.body === "string") {
+      body = JSON.parse(req.body);
+    } else {
+      body = req.body;
+    }
+
+    const query = body?.query;
     if (!query || typeof query !== "string") {
-      return res.status(400).json({ error: "Missing query string" });
+      return res.status(400).json({ error: "Missing field 'query' in JSON body" });
     }
 
     // Sök i tabellen Tipsbank (title + content + tags om de finns)
     const { data, error } = await supabase
       .from("Tipsbank")
       .select("id, title, content, tags")
-      .or(`title.ilike.%${query}%,content.ilike.%${query}%,tags.ilike.%${query}%`)
+      .or(
+        `title.ilike.%${query}%,content.ilike.%${query}%,tags.ilike.%${query}%`
+      )
       .limit(5);
 
     if (error) throw error;
 
     return res.status(200).json({
       ok: true,
-      results: data ?? []
+      results: data ?? [],
     });
   } catch (err: any) {
     return res.status(500).json({ error: String(err?.message ?? err) });
   }
 }
-
-// This endpoint searches the Tipsbank in Supabase
