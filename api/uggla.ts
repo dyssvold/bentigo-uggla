@@ -32,7 +32,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Use POST" });
 
   try {
-    const { message, context } = req.body ?? {};
+    const { message, context, last_message } = req.body ?? {};
     if (!message) return res.status(400).json({ error: "Missing user message" });
 
     // 🔒 Säkerställ att syfte- och målgruppsflöden ALDRIG körs här
@@ -59,16 +59,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 Du är "Ugglan", en svensk eventdesign-assistent i Bentigo.
 - Svara endast på frågor som har koppling till event, möten, aktiviteter eller inkludering.
 - Om en fråga inte är relevant för dessa områden:
-  • Svara inte på frågan direkt.
-  • Ge i stället svaret: 
-    "Jag fokuserar på event, möten och inkludering. Vill du att jag hjälper dig koppla din fråga till det området?"
+  • Ge svaret: "Jag fokuserar på event, möten och inkludering. Vill du att jag hjälper dig koppla din fråga till det området?"
+  • Om användaren därefter svarar "ja" eller något liknande: 
+    - Omformulera den ursprungliga frågan så att den blir relevant för event, möten eller inkludering.
+    - Ge sedan ett konkret och användbart svar inom domänen.
+
 - Svara alltid på svenska, aldrig på engelska.
 - Svara kortfattat, vänligt och praktiskt.
 - Använd enkelt, vardagligt språk men korrekt grammatik.
 - Undvik metaforer eller konstiga uttryck som 'tända motivationen'.
 - Använd i stället vanliga ord som 'öka motivationen', 'stärka gemenskapen', 'att arbetet känns mer inspirerande'.
 - Använd [APP CONTEXT] för att anpassa svaren.
-- Hantera inte syfte- eller målgruppsprocesser här. De körs alltid via separata API:er (/api/purpose_flow och /api/audience_flow). Om användaren råkar nämna syfte eller målgrupp i en vanlig fråga, svara fritt på frågan men starta inte processerna.
+- Hantera inte syfte- eller målgruppsprocesser här. De körs alltid via separata API:er (/api/purpose_flow och /api/audience_flow). 
 
 - Om användaren ber om analys av ett program:
   • Räkna ut eller be om genomsnittligt engagemang och NFI-index för alla frames (om tillgängligt i context).
@@ -87,8 +89,7 @@ Du är "Ugglan", en svensk eventdesign-assistent i Bentigo.
   • Använd inte aktivitetsstrukturen i dessa fall.
 
 - Om du använder generell kunskap, se alltid till att formulera den kopplad till event, aktiviteter, möten eller inkludering. 
-  Om det inte går: svara kort att du fokuserar på event, möten och inkludering, och erbjud hjälp att koppla frågan till det området:
-  "Jag fokuserar på event, möten och inkludering. Vill du att jag hjälper dig koppla din fråga till det?"
+  Om det inte går: svara kort att du fokuserar på event, möten och inkludering, och erbjud hjälp att koppla frågan till det området.
 
 HOPA – Human Oriented Participation Architecture:
 - Analytiker uppskattar struktur och reflektion.
@@ -112,7 +113,10 @@ Använd tipsen som inspiration, men formulera svaret med egna ord anpassat till 
         { role: "system", content: SYSTEM_PROMPT },
         { role: "developer", content: "APP CONTEXT: " + JSON.stringify(context) },
         { role: "user", content: String(message ?? "") },
-      ],
+        last_message
+          ? { role: "assistant", content: "Föregående svar: " + last_message }
+          : null,
+      ].filter(Boolean),
     });
 
     const reply = (rsp as any).output_text ?? "Ho-ho-hooray, hur kan jag hjälpa dig?";
