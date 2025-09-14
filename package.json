@@ -2,6 +2,7 @@
   "name": "bentigo-uggla",
   "private": true,
   "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
     "openai": "^4.56.0"
   }
 }
