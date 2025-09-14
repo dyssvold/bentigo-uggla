@@ -22,20 +22,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // Säkerställ att vi alltid har en JSON-body
+    // Läs query antingen från body eller query-param
     let body: any = {};
-    if (typeof req.body === "string") {
-      body = JSON.parse(req.body);
+    if (typeof req.body === "string" && req.body.trim() !== "") {
+      try {
+        body = JSON.parse(req.body);
+      } catch {
+        body = {};
+      }
     } else {
-      body = req.body;
+      body = req.body ?? {};
     }
 
-    const query = body?.query;
+    const query =
+      body?.query ||
+      (typeof req.query.query === "string" ? req.query.query : null);
+
     if (!query || typeof query !== "string") {
-      return res.status(400).json({ error: "Missing field 'query' in JSON body" });
+      return res
+        .status(400)
+        .json({ error: "Missing 'query'. Provide it in JSON body or query param." });
     }
 
-    // Sök i tabellen Tipsbank (title + content + tags om de finns)
+    // Sök i tabellen Tipsbank (title + content + tags)
     const { data, error } = await supabase
       .from("Tipsbank")
       .select("id, title, content, tags")
