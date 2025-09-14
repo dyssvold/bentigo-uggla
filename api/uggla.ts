@@ -35,7 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { message, context, last_message, original_question } = req.body ?? {};
     if (!message) return res.status(400).json({ error: "Missing user message" });
 
-    // 🔒 Säkerställ att syfte- och målgruppsflöden ALDRIG körs här
+    // 🔒 Blockera syfte- och målgruppsflöden här
     if (
       context?.focus_field === "program.purpose" ||
       context?.focus_field === "program.audience_profile"
@@ -46,19 +46,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Kontrollera om användaren just har svarat "ja" efter fallback
+    // 🚦 Kolla om användaren just bekräftat ("ja" etc) efter fallback
     const lowerMsg = String(message).trim().toLowerCase();
     const isAffirmative = ["ja", "ja gärna", "absolut", "okej", "gör det"].includes(lowerMsg);
 
-    if (isAffirmative && last_message?.includes("Jag fokuserar på event, möten och inkludering")) {
-      // Använd original_question om vi skickar med det, annars använd last_message
-      const baseQuestion = original_question || last_message;
+    if (
+      isAffirmative &&
+      last_message?.includes("Jag fokuserar på event, möten och inkludering") &&
+      (original_question || context?.original_question)
+    ) {
+      const baseQuestion = original_question || context?.original_question;
 
       const prompt = `
 Du är Ugglan, en svensk eventdesign-assistent. 
 Använd den här ursprungliga frågan: "${baseQuestion}".
-Gör den eventrelaterad och ge ett konkret och användbart svar som passar in i kontexten av event, möten, aktiviteter och inkludering.
-Skriv alltid på svenska, med enkelt och praktiskt språk.
+Omformulera den så att den blir relevant för event, möten eller inkludering, 
+och ge sedan ett konkret och användbart svar som hjälper användaren i den kontexten.
+Skriv alltid på svenska, enkelt och praktiskt.
       `.trim();
 
       const rsp2 = await client.responses.create({
@@ -86,6 +90,7 @@ Du är "Ugglan", en svensk eventdesign-assistent i Bentigo.
 - Tolka alltid ord som "föreläsare", "talare", "moderator", "program", "inslag", "övning" eller "aktivitet" som eventrelaterade.
 - Om en fråga verkligen inte går att koppla till event, möten, aktiviteter eller inkludering:
   • Ge svaret: "Jag fokuserar på event, möten och inkludering. Vill du att jag hjälper dig koppla din fråga till det området?"
+  • Spara den ursprungliga frågan i context.original_question för nästa steg.
 
 - Svara alltid på svenska, aldrig på engelska.
 - Svara kortfattat, vänligt och praktiskt.
@@ -121,7 +126,9 @@ ${inspiredTips}
     });
 
     const reply = (rsp as any).output_text ?? "Ho-ho-hooray, hur kan jag hjälpa dig?";
-    res.status(200).json({ reply, tips_used: tips.length });
+    res
+      .status(200)
+      .json({ reply, tips_used: tips.length, original_question: message });
   } catch (err: any) {
     res.status(500).json({ error: String(err?.message ?? err) });
   }
