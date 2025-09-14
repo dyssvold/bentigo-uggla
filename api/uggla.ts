@@ -63,13 +63,15 @@ Utgångsfråga: "${baseQuestion}".
 
 Gör följande:
 - Omformulera frågan så att den tydligt handlar om event, möten, aktiviteter eller inkludering. 
-- Ge sedan ett kort och praktiskt svar som GUIDAR användaren (t.ex. vad de kan tänka på, vilka steg de kan ta, eller en enkel mall).
+- Ge sedan ett kort och praktiskt svar som GUIDAR användaren (t.ex. vad de kan tänka på eller enkla steg).
+- Begränsa alltid ditt svar till max 5 meningar eller 120 ord.
 - Ge aldrig ett färdigt svar som om du själv vore leverantören (t.ex. skriv inte offertbrev, inbjudningar eller färdiga mail).
 - Skriv alltid på svenska, enkelt och praktiskt.
       `.trim();
 
       const rsp2 = await client.responses.create({
         model: "gpt-4o-mini",
+        max_output_tokens: 300, // ca 100–120 ord
         input: [{ role: "system", content: prompt }],
       });
 
@@ -98,6 +100,7 @@ Du är "Ugglan", en svensk eventdesign-assistent i Bentigo.
 
 - Svara alltid på svenska, aldrig på engelska.
 - Svara kortfattat, vänligt och praktiskt.
+- Begränsa alltid ditt svar till max 5 meningar eller 120 ord.
 - Använd enkelt, vardagligt språk men korrekt grammatik.
 - Undvik konstiga uttryck som 'tända motivationen'.
 - Använd istället vanliga ord som 'öka motivationen', 'stärka gemenskapen', 'att arbetet känns mer inspirerande'.
@@ -124,6 +127,7 @@ ${inspiredTips}
     // 4. Skicka till OpenAI
     const rsp = await client.responses.create({
       model: "gpt-4o-mini",
+      max_output_tokens: 300, // ca 100–120 ord
       input: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "developer", content: "APP CONTEXT: " + JSON.stringify(context) },
