@@ -1,19 +1,49 @@
+// api/uggla.ts
 import OpenAI from "openai";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// Funktion för att hämta relevanta tips från Tipsbank via vårt tips_search-API
+async function fetchTips(query: string) {
+  try {
+    const rsp = await fetch(`${process.env.VERCEL_URL}/api/tips_search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    });
+    const json = await rsp.json();
+    return json?.results ?? [];
+  } catch (err) {
+    console.error("Tips fetch error:", err);
+    return [];
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+
   if (req.method === "OPTIONS") {
-    res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Headers", "content-type, authorization");
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
     return res.status(200).end();
   }
 
+  if (req.method !== "POST") return res.status(405).json({ error: "Use POST" });
+
   try {
     const { message, context } = req.body ?? {};
+    if (!message) return res.status(400).json({ error: "Missing user message" });
 
+    // 1. Hämta tips från Tipsbank
+    const tips = await fetchTips(message);
+
+    // 2. Formatera tipsen
+    const inspiredTips = tips.length
+      ? tips.map((t: any, i: number) => `${i + 1}. ${t.title}: ${t.content}`).join("\n")
+      : "Inga relevanta interna tips hittades.";
+
+    // 3. Systemprompt
     const SYSTEM_PROMPT = `
 Du är "Ugglan", en svensk eventdesign-assistent i Bentigo.
 - Svara alltid på svenska, aldrig på engelska.
@@ -54,8 +84,14 @@ En bra design blandar aktiviteter för alla tre typer, bygger trygghet först oc
 
 [APP CONTEXT]
 ${JSON.stringify(context ?? {}, null, 2)}
+
+[INSPIRED TIPS]
+${inspiredTips}
+
+Använd alltid dessa tips som inspiration när du svarar, men formulera svaret med egna ord, anpassat till frågan.
     `.trim();
 
+    // 4. Skicka till OpenAI
     const rsp = await client.responses.create({
       model: "gpt-4o-mini",
       input: [
@@ -67,10 +103,8 @@ ${JSON.stringify(context ?? {}, null, 2)}
 
     const reply = (rsp as any).output_text ?? "Ho-ho-hooray, hur kan jag hjälpa dig?";
 
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.status(200).json({ reply });
+    res.status(200).json({ reply, tips_used: tips.length });
   } catch (err: any) {
-    res.setHeader("Access-Control-Allow-Origin", "*");
     res.status(500).json({ error: String(err?.message ?? err) });
   }
 }
