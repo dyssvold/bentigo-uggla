@@ -35,6 +35,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { message, context } = req.body ?? {};
     if (!message) return res.status(400).json({ error: "Missing user message" });
 
+    // 🔒 Säkerställ att syfte- och målgruppsflöden ALDRIG körs här
+    if (
+      context?.focus_field === "program.purpose" ||
+      context?.focus_field === "program.audience_profile"
+    ) {
+      return res.status(200).json({
+        reply:
+          "Det här steget hanteras av ett separat flöde i appen. Klicka på Uggle-knappen bredvid fältet för att starta rätt process.",
+      });
+    }
+
     // 1. Hämta tips från Tipsbank
     const tips = await fetchTips(message);
 
@@ -48,35 +59,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 Du är "Ugglan", en svensk eventdesign-assistent i Bentigo.
 - Svara alltid på svenska, aldrig på engelska.
 - Svara kortfattat, vänligt och praktiskt.
-– Använd enkelt, vardagligt språk men med korrekt svensk grammatik.
-– Undvik metaforer eller onaturliga uttryck som 'tända motivationen', 'allow'.
-– Använd i stället vanliga ord som 'öka motivationen', 'att arbetet känns mer inspirerande', 'stärka gemenskapen'.
+- Använd enkelt, vardagligt språk men korrekt grammatik.
+- Undvik metaforer eller konstiga uttryck som 'tända motivationen'.
+- Använd i stället vanliga ord som 'öka motivationen', 'stärka gemenskapen', 'att arbetet känns mer inspirerande'.
 - Använd [APP CONTEXT] för att anpassa svaren.
-- Hantera inte de detaljerade processerna för syfte eller deltagarprofil här; de körs via separata API:er (/api/purpose_flow och /api/audience_flow).
+- Hantera inte syfte- eller målgruppsprocesser här. De körs alltid via separata API:er (/api/purpose_flow och /api/audience_flow). Om användaren råkar nämna syfte eller målgrupp i en vanlig fråga, svara fritt på frågan men starta inte processerna.
 
 - Om användaren ber om analys av ett program:
   • Räkna ut eller be om genomsnittligt engagemang och NFI-index för alla frames (om tillgängligt i context).
-  • Ge alltid exakt 3 konkreta justeringar (t.ex. lägg till återhämtning, variera engagemang, justera pauser).
+  • Ge alltid exakt 3 konkreta justeringar.
   • Håll råden enkla och handlingsbara.
 
-- Om användaren uttryckligen ber om **förslag på en aktivitet, övning, inslag eller upplägg**:
-  1. Ge alltid **ett huvudförslag** (en aktivitet som fungerar för alla).
-  2. Lägg till sektionen "### Förslag på anpassningar och variation", med tips för olika deltagartyper:
-     - För analytiker: struktur, ramar, reflektion.
-     - För interaktörer: samarbete, dialog, energi.
-     - För visionärer: syfte, helhet, verkliga utmaningar.
-     Tipsen ska vara variationer av huvudförslaget, inte helt nya aktiviteter.
-  3. Lägg alltid till "### NPF-anpassningar:" med anpassningar för **deltagare med NPF-relaterade utmaningar, med eller utan diagnos**:
-     - tydlighet, förutsägbarhet, hanterbar energi, möjlighet till pauser, minskad kognitiv belastning.
-  4. Lägg ev. till en sektion "### Kompletterande aktivitet" om någon arketyp eller deltagare annars riskerar att inte bli inkluderade.
-  5. Använd alltid enkelt, vardagligt språk och en positiv ton.
+- Om användaren ber om förslag på en aktivitet, övning, inslag eller upplägg:
+  • Ge ett huvudförslag.
+  • Lägg till variationer för olika deltagartyper (Analytiker, Interaktörer, Visionärer).
+  • Lägg till NPF-anpassningar (med eller utan diagnos).
+  • Eventuellt en kompletterande aktivitet om någon riskerar att exkluderas.
+  • Håll språket enkelt och positivt.
 
-- Om frågan istället handlar om **fakta, logistik eller kunskap** (t.ex. "hur många pennor behövs?", "hur minskar vi matsvinnet?"):
+- Om användaren istället ställer en faktabaserad fråga (t.ex. "hur många pennor behövs?"):
   • Ge ett kort, rakt och praktiskt svar.
   • Använd inte aktivitetsstrukturen i dessa fall.
 
 HOPA – Human Oriented Participation Architecture:
-Människor deltar och engagerar sig på olika sätt.
 - Analytiker uppskattar struktur och reflektion.
 - Interaktörer gillar samarbete och energi.
 - Visionärer drivs av syfte och helhet.
@@ -88,7 +93,7 @@ ${JSON.stringify(context ?? {}, null, 2)}
 [INSPIRED TIPS]
 ${inspiredTips}
 
-Använd alltid dessa tips som inspiration när du svarar, men formulera svaret med egna ord, anpassat till frågan.
+Använd tipsen som inspiration, men formulera svaret med egna ord anpassat till frågan.
     `.trim();
 
     // 4. Skicka till OpenAI
@@ -97,12 +102,11 @@ Använd alltid dessa tips som inspiration när du svarar, men formulera svaret m
       input: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "developer", content: "APP CONTEXT: " + JSON.stringify(context) },
-        { role: "user", content: String(message ?? "") }
+        { role: "user", content: String(message ?? "") },
       ],
     });
 
     const reply = (rsp as any).output_text ?? "Ho-ho-hooray, hur kan jag hjälpa dig?";
-
     res.status(200).json({ reply, tips_used: tips.length });
   } catch (err: any) {
     res.status(500).json({ error: String(err?.message ?? err) });
