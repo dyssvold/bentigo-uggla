@@ -1,5 +1,4 @@
 // api/frame_ollo_flow.ts
-
 import OpenAI from "openai";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
@@ -11,13 +10,15 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-type Step =
-  | "start"
-  | "suggest_bentos"
-  | "choose_or_custom"
-  | "generate_content"
-  | "refine"
-  | "finalize";
+/**
+ * STEG I FLODET (justerat):
+ * start               -> fråga om användaren vill skapa med Ollo
+ * generate_content    -> om ja: be om syfte och skapa förslag
+ * refine              -> användaren justerar
+ * finalize            -> spara och stäng
+ */
+
+type Step = "start" | "generate_content" | "refine" | "finalize";
 
 type FrameOlloBody = {
   step: Step;
@@ -26,7 +27,6 @@ type FrameOlloBody = {
     event_id?: string;
     frame_id?: string;
     frame_purpose?: string;
-    selected_bento_id?: string | null;
   };
 };
 
@@ -41,110 +41,19 @@ async function getEventContext(event_id: string) {
   return data;
 }
 
-async function fetchCandidateBentos() {
-  const { data, error } = await supabase
-    .from("bento_library")
-    .select(
-      `
-      id,
-      name,
-      short_description,
-      purpose_category,
-      hopa_profiles,
-      eng_level,
-      nfi_index,
-      effects
-    `
-    )
-    .limit(30);
-
-  if (error) throw new Error("Failed to fetch bentos");
-  return data || [];
-}
-
-async function rankBentosWithOllo(
-  bentos: any[],
-  framePurpose: string,
-  eventContext: any
-) {
-  const system = `
-Du är Ollo, en svensk AI-assistent för inkluderande mötesdesign.
-
-Din uppgift:
-Välj 3–5 bentos som passar bäst för en programpunkt.
-
-Ta hänsyn till:
-- Programpunktens syfte
-- Eventets övergripande syfte
-- Deltagarprofil (HOPA)
-- Variation i engagemangsnivå
-- Hjärnvänlighet (NFI)
-
-Svara med en JSON-array enligt detta format:
-[
-  {
-    "id": "bento_id",
-    "motivation": "Kort motivering"
-  }
-]
-Inget annat.`;
-
-  const user = `
-PROGRAMPUNKTENS SYFTE:
-${framePurpose}
-
-EVENTETS SYFTE:
-${eventContext.purpose}
-
-DELTAGARPROFIL:
-${eventContext.audience_profile}
-
-TILLGÄNGLIGA BENTOS:
-${bentos
-    .map(
-      (b) =>
-        `- ${b.name} (${b.purpose_category}, HOPA: ${b.hopa_profiles?.join(", ")}, ENG: ${b.eng_level}, NFI: ${b.nfi_index}) – ${b.short_description}`
-    )
-    .join("\n")}`;
-
-  const rsp = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-    temperature: 0.4,
-  });
-
-  return JSON.parse(rsp.choices[0].message.content || "[]");
-}
-
 async function generateFrameContent(prompt: string) {
   const system = `
-Du är Ollo – AI-assistent och expert på inkluderande, engagerande och hjärnvänliga programpunkter.
+Du är Ollo, expert på inkluderande och hjärnvänliga programpunkter.
 
-Din uppgift är att skapa en tydlig programpunkt som innehåller:
-- En kort och tydlig titel (max 6 ord)
-- En beskrivning (1–3 meningar)
-- Ett reflektionsinslag (t.ex. tyst reflektion eller delning)
-- Ett interaktionsinslag (t.ex. fråga i Mentimeter, diskussion i par eller handuppräckning)
-- 3–5 steg med namn och kort beskrivning
-- En rimlig tidslängd för varje steg (max 20 minuter)
-- Ett NFI-index (1–5) som anger hjärnvänlighet
-- En engagemangsnivå (1–5) baserat på variation och interaktivitet
+Skapa:
+- Reflektionsinslag
+- Interaktionsinslag
+- 3–5 steg (kort text)
+- Tidslängd per steg (max 20 min)
+- NFI-index (1–5)
+- Engagemangsnivå (1–5)
 
-Svarsmall:
-Titel: ...
-Beskrivning: ...
-
-Steg:
-1. Namn (X min) – Kort beskrivning
-2. ...
-
-Reflektion: ...
-Interaktion: ...
-NFI-index: X
-Engagemangsnivå: X
+Skriv tydligt, praktiskt och konkret.
 `;
 
   const rsp = await openai.chat.completions.create({
@@ -153,7 +62,7 @@ Engagemangsnivå: X
       { role: "system", content: system },
       { role: "user", content: prompt },
     ],
-    temperature: 0.5,
+    temperature: 0.6,
   });
 
   return rsp.choices[0].message.content?.trim();
@@ -168,76 +77,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const body = req.body as FrameOlloBody;
     const { step, input, state = {} } = body;
 
+    /* ----------- step: start ----------- */
     if (step === "start") {
       return res.json({
         ok: true,
         ui: [
           {
             role: "assistant",
-            text:
-              "Vad är syftet med den här programpunkten?\n\nBeskriv kort vad den ska handla om och leda till.",
+            text: "Ska vi designa en egen programpunkt tillsammans?",
+            buttons: [
+              { text: "Ja gärna", action: "continue" },
+              { text: "Inte just nu", action: "cancel" },
+            ],
           },
         ],
-        next_step: "suggest_bentos",
+        next_step: "generate_content",
         state,
       });
     }
 
-    if (step === "suggest_bentos") {
-      if (!input || !state.event_id)
-        return res.status(400).json({ error: "Missing input or event_id" });
-
-      const eventContext = await getEventContext(state.event_id);
-      const candidates = await fetchCandidateBentos();
-      const ranked = await rankBentosWithOllo(candidates, input, eventContext);
-
-      const suggested = ranked.map((r: any) => {
-        const b = candidates.find((c) => c.id === r.id);
-        return {
-          ...b,
-          motivation: r.motivation,
-        };
-      });
-
-      return res.json({
-        ok: true,
-        ui: [
-          {
-            role: "assistant",
-            text: "Här är några bentos som passar bra för den här programpunkten:",
-          },
-          ...suggested.map((b) => ({
-            role: "bento_card",
-            data: b,
-          })),
-          {
-            role: "assistant",
-            text: "Vill du använda någon av dessa, eller skapa en egen aktivitet?",
-          },
-        ],
-        next_step: "choose_or_custom",
-        state: { ...state, frame_purpose: input },
-      });
-    }
-
+    /* ----------- step: generate_content ----------- */
     if (step === "generate_content") {
-      if (!state.event_id || !state.frame_purpose)
-        return res.status(400).json({ error: "Missing state" });
+      if (!input || !state.event_id)
+        return res.status(400).json({ error: "Missing input/state" });
 
       const eventContext = await getEventContext(state.event_id);
 
       const prompt = `
-Eventets syfte:
+EVENTETS SYFTE:
 ${eventContext.purpose}
 
-Deltagarprofil:
+DELTAGARPROFIL:
 ${eventContext.audience_profile}
 
-Programanteckningar:
+PROGRAMANTECKNINGAR:
 ${eventContext.program_notes || "—"}
 
-Syfte med denna programpunkt:
-${state.frame_purpose}`;
+PROGRAMPUNKTENS SYFTE:
+${input}
+`;
 
       const content = await generateFrameContent(prompt);
 
@@ -246,21 +124,22 @@ ${state.frame_purpose}`;
         ui: [
           {
             role: "assistant",
-            text: `Här är ett första förslag:\n\n${content}`,
+            text: `Här är ett förslag för din programpunkt:\n\n${content}`,
           },
           {
             role: "assistant",
-            text: "Vill du justera något, eller ska vi spara detta förslaget?",
+            text: "Vill du justera något, eller ska vi spara detta?",
           },
         ],
         data: { frame_proposal_raw: content },
         next_step: "refine",
-        state,
+        state: { ...state, frame_purpose: input },
       });
     }
 
+    /* ----------- step: refine ----------- */
     if (step === "refine") {
-      if (!input || !state.event_id)
+      if (!input || !state.event_id || !state.frame_purpose)
         return res.status(400).json({ error: "Missing input/state" });
 
       const eventContext = await getEventContext(state.event_id);
@@ -269,16 +148,11 @@ ${state.frame_purpose}`;
 Användaren vill justera följande:
 ${input}
 
-Skapa ett nytt förslag med uppdaterade delar enligt användarens önskemål. Återskapa hela förslaget.
-
-Eventets syfte:
-${eventContext.purpose}
-
-Deltagarprofil:
-${eventContext.audience_profile}
-
-Programpunktens syfte:
-${state.frame_purpose}`;
+Utgå från:
+Eventets syfte: ${eventContext.purpose}
+Deltagarprofil: ${eventContext.audience_profile}
+Programpunktens syfte: ${state.frame_purpose}
+`;
 
       const updated = await generateFrameContent(prompt);
 
@@ -289,6 +163,10 @@ ${state.frame_purpose}`;
             role: "assistant",
             text: `Uppdaterat förslag:\n\n${updated}`,
           },
+          {
+            role: "assistant",
+            text: "Vill du justera mer, eller ska vi spara detta?",
+          },
         ],
         data: { frame_proposal_raw: updated },
         next_step: "refine",
@@ -296,6 +174,7 @@ ${state.frame_purpose}`;
       });
     }
 
+    /* ----------- step: finalize ----------- */
     if (step === "finalize") {
       return res.json({
         ok: true,
