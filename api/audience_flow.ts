@@ -65,28 +65,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const state = body?.state ?? {};
     const hasAudience = body?.context?.has_audience ?? false;
 
-   if (hasAudience === true && step === 0) {
-  // Simulerad hämtning av sparad beskrivning – byt gärna ut detta mot riktig databasinfo om möjligt
-  const existingAudience: Required<AudienceBody>["state"] = {
-    who: "Deltagarprofilen här har en blandad profil…", // Förifyllt från Supabase i verklig version
-    needs: "",
-    archetype: "alla"
-  };
+    if (hasAudience === true && step === 0) {
+      const existingAudience: Required<AudienceBody>["state"] = {
+        who: "Deltagarprofilen här har en blandad profil som inkluderar både analytiker, interaktörer och visionärer.",
+        needs: "För att skapa ett engagerande event är det viktigt att blanda olika aktiviteter så att alla känner sig involverade. Längre raster med fika är ett bra sätt att ge utrymme för informella samtal.",
+        archetype: "alla"
+      };
 
-  return res.status(200).json({
-    ok: true,
-    ui: [{
-      role: "assistant",
-      id: "audience_refine_intro",
-      text:
-        "Eventet har redan en deltagarbeskrivning:\n\n" +
-        `${existingAudience.who}\n\n` +
-        "Vill du förbättra eller förtydliga den? Beskriv i så fall vad du vill ändra."
-    }],
-    next_step: "refine_existing",
-    state: existingAudience // <--- VIKTIGT: returnera state!
-  });
-}
+      return res.status(200).json({
+        ok: true,
+        ui: [{
+          role: "assistant",
+          id: "audience_refine_intro",
+          text:
+            "Eventet har redan en deltagarbeskrivning:\n\n" +
+            `${existingAudience.who}\n\n` +
+            "Vill du förbättra eller förtydliga den? Beskriv i så fall vad du vill ändra."
+        }],
+        next_step: "refine_existing",
+        state: existingAudience
+      });
+    }
 
     if (step === 0) {
       return res.status(200).json({
@@ -157,15 +156,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (step === "refine_existing") {
-      if (!input || !state?.who || !state?.needs || !state?.archetype) {
+      if (!input || !state?.who || !state?.archetype) {
         return res.status(400).json({ error: "Missing required state for refinement" });
       }
 
-      const fullState = {
+      const fullState: Required<AudienceBody>["state"] = {
         who: state.who,
-        needs: `${state.needs}. ${input}`, // Lägg till det nya som tillägg i needs
+        needs: state.needs ? `${state.needs}. ${input}` : input,
         archetype: state.archetype,
-      } as Required<AudienceBody>["state"];
+      };
 
       const profile = await synthesizeAudience(fullState);
 
