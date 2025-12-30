@@ -65,21 +65,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const state = body?.state ?? {};
     const hasAudience = body?.context?.has_audience ?? false;
 
-    if (hasAudience === true && step === 0) {
-      return res.status(200).json({
-        ok: true,
-        ui: [
-          {
-            role: "assistant",
-            id: "audience_refine_intro",
-            text:
-              "Eventet har redan en deltagarbeskrivning. Vill du förbättra eller förtydliga den? " +
-              "Beskriv i så fall vad du vill ändra.",
-          },
-        ],
-        next_step: "refine_existing",
-      });
-    }
+   if (hasAudience === true && step === 0) {
+  // Simulerad hämtning av sparad beskrivning – byt gärna ut detta mot riktig databasinfo om möjligt
+  const existingAudience: Required<AudienceBody>["state"] = {
+    who: "Deltagarprofilen här har en blandad profil…", // Förifyllt från Supabase i verklig version
+    needs: "",
+    archetype: "alla"
+  };
+
+  return res.status(200).json({
+    ok: true,
+    ui: [{
+      role: "assistant",
+      id: "audience_refine_intro",
+      text:
+        "Eventet har redan en deltagarbeskrivning:\n\n" +
+        `${existingAudience.who}\n\n` +
+        "Vill du förbättra eller förtydliga den? Beskriv i så fall vad du vill ändra."
+    }],
+    next_step: "refine_existing",
+    state: existingAudience // <--- VIKTIGT: returnera state!
+  });
+}
 
     if (step === 0) {
       return res.status(200).json({
