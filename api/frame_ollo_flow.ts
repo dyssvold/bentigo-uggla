@@ -1,4 +1,5 @@
 // api/frame_ollo_flow.ts
+
 import OpenAI from "openai";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
@@ -9,16 +10,6 @@ const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
-
-/**
- * STEG I FLÖDET
- * start               -> fråga om syfte för programpunkten
- * suggest_bentos      -> föreslå bentos (filtrerade i DB + rangordnade av Ollo)
- * choose_or_custom    -> användaren väljer bento eller egen aktivitet
- * generate_content    -> Ollo genererar innehåll
- * refine              -> användaren justerar
- * finalize            -> spara
- */
 
 type Step =
   | "start"
@@ -39,8 +30,6 @@ type FrameOlloBody = {
   };
 };
 
-/* ----------------------------- helpers ----------------------------- */
-
 async function getEventContext(event_id: string) {
   const { data, error } = await supabase
     .from("event")
@@ -52,10 +41,6 @@ async function getEventContext(event_id: string) {
   return data;
 }
 
-/**
- * 1) FILTRERA I DATABASEN
- * Vi hämtar bara ett rimligt urval (t.ex. 20 st)
- */
 async function fetchCandidateBentos() {
   const { data, error } = await supabase
     .from("bento_library")
@@ -77,9 +62,6 @@ async function fetchCandidateBentos() {
   return data || [];
 }
 
-/**
- * 2) Ollo rangordnar och väljer 3–5 bentos
- */
 async function rankBentosWithOllo(
   bentos: any[],
   framePurpose: string,
@@ -105,8 +87,7 @@ Svara med en JSON-array enligt detta format:
     "motivation": "Kort motivering"
   }
 ]
-Inget annat.
-`;
+Inget annat.`;
 
   const user = `
 PROGRAMPUNKTENS SYFTE:
@@ -120,14 +101,11 @@ ${eventContext.audience_profile}
 
 TILLGÄNGLIGA BENTOS:
 ${bentos
-  .map(
-    (b) =>
-      `- ${b.name} (${b.purpose_category}, HOPA: ${b.hopa_profiles?.join(
-        ", "
-      )}, ENG: ${b.eng_level}, NFI: ${b.nfi_index}) – ${b.short_description}`
-  )
-  .join("\n")}
-`;
+    .map(
+      (b) =>
+        `- ${b.name} (${b.purpose_category}, HOPA: ${b.hopa_profiles?.join(", ")}, ENG: ${b.eng_level}, NFI: ${b.nfi_index}) – ${b.short_description}`
+    )
+    .join("\n")}`;
 
   const rsp = await openai.chat.completions.create({
     model: "gpt-4o-mini",
@@ -141,22 +119,32 @@ ${bentos
   return JSON.parse(rsp.choices[0].message.content || "[]");
 }
 
-/**
- * 3) Generera innehåll för en frame
- */
 async function generateFrameContent(prompt: string) {
   const system = `
-Du är Ollo, expert på inkluderande och hjärnvänliga programpunkter.
+Du är Ollo – AI-assistent och expert på inkluderande, engagerande och hjärnvänliga programpunkter.
 
-Skapa:
-- Reflektionsinslag
-- Interaktionsinslag
-- 3–5 steg (kort text)
-- Tidslängd per steg (max 20 min)
-- NFI-index (1–5)
-- Engagemangsnivå (1–5)
+Din uppgift är att skapa en tydlig programpunkt som innehåller:
+- En kort och tydlig titel (max 6 ord)
+- En beskrivning (1–3 meningar)
+- Ett reflektionsinslag (t.ex. tyst reflektion eller delning)
+- Ett interaktionsinslag (t.ex. fråga i Mentimeter, diskussion i par eller handuppräckning)
+- 3–5 steg med namn och kort beskrivning
+- En rimlig tidslängd för varje steg (max 20 minuter)
+- Ett NFI-index (1–5) som anger hjärnvänlighet
+- En engagemangsnivå (1–5) baserat på variation och interaktivitet
 
-Skriv tydligt, praktiskt och konkret.
+Svarsmall:
+Titel: ...
+Beskrivning: ...
+
+Steg:
+1. Namn (X min) – Kort beskrivning
+2. ...
+
+Reflektion: ...
+Interaktion: ...
+NFI-index: X
+Engagemangsnivå: X
 `;
 
   const rsp = await openai.chat.completions.create({
@@ -165,13 +153,11 @@ Skriv tydligt, praktiskt och konkret.
       { role: "system", content: system },
       { role: "user", content: prompt },
     ],
-    temperature: 0.6,
+    temperature: 0.5,
   });
 
   return rsp.choices[0].message.content?.trim();
 }
-
-/* ----------------------------- handler ----------------------------- */
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -182,7 +168,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const body = req.body as FrameOlloBody;
     const { step, input, state = {} } = body;
 
-    /* ---------------- step: start ---------------- */
     if (step === "start") {
       return res.json({
         ok: true,
@@ -190,8 +175,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           {
             role: "assistant",
             text:
-              "Vad är syftet med den här programpunkten?\n\n" +
-              "Beskriv kort vad den ska handla om och leda till.",
+              "Vad är syftet med den här programpunkten?\n\nBeskriv kort vad den ska handla om och leda till.",
           },
         ],
         next_step: "suggest_bentos",
@@ -199,18 +183,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    /* ---------------- step: suggest_bentos ---------------- */
     if (step === "suggest_bentos") {
       if (!input || !state.event_id)
         return res.status(400).json({ error: "Missing input or event_id" });
 
       const eventContext = await getEventContext(state.event_id);
       const candidates = await fetchCandidateBentos();
-      const ranked = await rankBentosWithOllo(
-        candidates,
-        input,
-        eventContext
-      );
+      const ranked = await rankBentosWithOllo(candidates, input, eventContext);
 
       const suggested = ranked.map((r: any) => {
         const b = candidates.find((c) => c.id === r.id);
@@ -225,8 +204,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ui: [
           {
             role: "assistant",
-            text:
-              "Här är några bentos som passar bra för den här programpunkten:",
+            text: "Här är några bentos som passar bra för den här programpunkten:",
           },
           ...suggested.map((b) => ({
             role: "bento_card",
@@ -234,8 +212,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           })),
           {
             role: "assistant",
-            text:
-              "Vill du använda någon av dessa, eller skapa en egen aktivitet?",
+            text: "Vill du använda någon av dessa, eller skapa en egen aktivitet?",
           },
         ],
         next_step: "choose_or_custom",
@@ -243,7 +220,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    /* ---------------- step: generate_content ---------------- */
     if (step === "generate_content") {
       if (!state.event_id || !state.frame_purpose)
         return res.status(400).json({ error: "Missing state" });
@@ -251,18 +227,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const eventContext = await getEventContext(state.event_id);
 
       const prompt = `
-EVENTETS SYFTE:
+Eventets syfte:
 ${eventContext.purpose}
 
-DELTAGARPROFIL:
+Deltagarprofil:
 ${eventContext.audience_profile}
 
-PROGRAMANTECKNINGAR:
+Programanteckningar:
 ${eventContext.program_notes || "—"}
 
-PROGRAMPUNKTENS SYFTE:
-${state.frame_purpose}
-`;
+Syfte med denna programpunkt:
+${state.frame_purpose}`;
 
       const content = await generateFrameContent(prompt);
 
@@ -275,8 +250,7 @@ ${state.frame_purpose}
           },
           {
             role: "assistant",
-            text:
-              "Vill du justera något, eller ska vi spara detta förslaget?",
+            text: "Vill du justera något, eller ska vi spara detta förslaget?",
           },
         ],
         data: { frame_proposal_raw: content },
@@ -285,7 +259,6 @@ ${state.frame_purpose}
       });
     }
 
-    /* ---------------- step: refine ---------------- */
     if (step === "refine") {
       if (!input || !state.event_id)
         return res.status(400).json({ error: "Missing input/state" });
@@ -296,11 +269,16 @@ ${state.frame_purpose}
 Användaren vill justera följande:
 ${input}
 
-Utgå från:
-Eventets syfte: ${eventContext.purpose}
-Deltagarprofil: ${eventContext.audience_profile}
-Programpunktens syfte: ${state.frame_purpose}
-`;
+Skapa ett nytt förslag med uppdaterade delar enligt användarens önskemål. Återskapa hela förslaget.
+
+Eventets syfte:
+${eventContext.purpose}
+
+Deltagarprofil:
+${eventContext.audience_profile}
+
+Programpunktens syfte:
+${state.frame_purpose}`;
 
       const updated = await generateFrameContent(prompt);
 
@@ -318,7 +296,6 @@ Programpunktens syfte: ${state.frame_purpose}
       });
     }
 
-    /* ---------------- step: finalize ---------------- */
     if (step === "finalize") {
       return res.json({
         ok: true,
