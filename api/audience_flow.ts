@@ -5,49 +5,82 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 type AudienceBody = {
-  step: 0 | 1 | 2 | 3 | "final_edit";
+  step: 0 | 1 | 2 | "final_edit" | "refine_existing";
   input?: string;
+  existing_audience?: string;
   state?: {
     who?: string;
     needs?: string;
     archetype?: string;
   };
-  context?: { program_id?: string | null; has_audience?: boolean | null };
+  context?: {
+    program_id?: string | null;
+    has_audience?: boolean | null;
+  };
 };
 
 function q(id: string, text: string) {
   return [{ role: "assistant", id, text }];
 }
 
+/* ---------- AI: skapa deltagarprofil ---------- */
+
 async function synthesizeAudience(state: Required<AudienceBody>["state"]) {
   const system =
     "Du är Ugglan, en svensk eventassistent.\n\n" +
     "HOPA – Human Oriented Participation Architecture:\n" +
-    "HOPA är en modell för att designa möten och event så att fler deltagare kan känna sig inkluderade, trygga och engagerade. " +
-    "Människor tar till sig, deltar och bidrar på olika sätt, och därför är det viktigt att utgå från olika deltagartyper.\n\n" +
-    "Tre deltagartyper (arketyper):\n" +
-    "- **Analytiker** – uppskattar struktur, tydliga ramar och att tänka enskilt. De gillar fördjupning, detaljer och reflektion. Viktigt med tid, struktur och lugna återhämtningsmöjligheter.\n" +
-    "- **Interaktörer** – trivs bäst när de får tänka tillsammans, prata, testa och samarbeta. De får energi av interaktion, rörelse och gemensamt skapande. Viktigt med inslag där de är aktiva.\n" +
-    "- **Visionärer** – gillar att tänka stort, koppla syfte till verkliga utmaningar och se helheten. De drivs av mening, systemperspektiv och relevans. Viktigt att visa syftet, nyttan och verklighetsanknytningen.\n\n" +
-    "Principer: blanda aktiviteter för att passa alla tre typer. Undvik att utgå från en norm. Skapa trygghet först. Anpassa efter olika funktionssätt och variera energi.\n\n" +
-    "Instruktion för texten: skriv en kort svensk deltagarprofil (2–3 meningar) baserat på användarens input (WHO, NEEDS, ARCHETYPE). " +
-    "Använd enkelt och vardagligt språk. Undvik svåra ord som 'beakta' eller 'variabilitet'. " +
-    "Undvik också uttryck som kan låta negativt, som 'gräva ner sig i detaljer'. " +
-    "Använd istället positiva formuleringar som 'uppskattar fördjupning', 'har sinne för detaljer' eller 'trivs med att analysera information noggrant'. " +
-    "När du beskriver ARCHETYPE:\n" +
-    "- Om ARCHETYPE är en av 'Analytiker', 'Interaktörer' eller 'Visionärer': skriv att deltagarprofilen kan luta mot den typen, och förklara kort vad det innebär i praktiken.\n" +
-    "- Om ARCHETYPE är 'ingen', 'alla', 'osäker' eller något annat: skriv istället att deltagarna har en blandad profil och förklara att upplägget bör innehålla variation.\n" +
-    "Beskriv aldrig att deltagarna är 'klassificerade som' en typ. Ge alltid en praktisk förklaring.";
+    "HOPA är en modell för att designa möten och event så att fler deltagare kan känna sig inkluderade, trygga och engagerade.\n\n" +
+    "Tre deltagartyper:\n" +
+    "- Analytiker – uppskattar struktur, fördjupning och lugn.\n" +
+    "- Interaktörer – trivs med samarbete, dialog och aktivitet.\n" +
+    "- Visionärer – drivs av syfte, helhet och verklighetskoppling.\n\n" +
+    "Instruktion:\n" +
+    "Skriv en kort svensk deltagarbeskrivning (2–3 meningar).\n" +
+    "Språket ska vara vardagligt, positivt och inkluderande.\n" +
+    "Om en arketyp anges, skriv att deltagarprofilen kan luta åt den.\n" +
+    "Om ingen tydlig arketyp anges, skriv att gruppen är blandad och behöver variation.";
 
-  const user = `WHO: ${state.who}\nNEEDS: ${state.needs}\nARCHETYPE: ${state.archetype}`;
+  const user =
+    `WHO: ${state.who}\n` +
+    `NEEDS: ${state.needs}\n` +
+    `ARCHETYPE: ${state.archetype}`;
 
   const rsp = await client.responses.create({
     model: "gpt-4o-mini",
-    input: [{ role: "system", content: system }, { role: "user", content: user }],
+    input: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
   });
 
   return (rsp as any).output_text?.trim() || "";
 }
+
+/* ---------- AI: förbättra befintlig text ---------- */
+
+async function refineAudience(existing: string, userInput: string) {
+  const system =
+    "Du är Ugglan, en svensk eventassistent.\n" +
+    "Din uppgift är att förbättra en befintlig deltagarbeskrivning.\n" +
+    "Behåll ton, längd och stil, men förtydliga och förbättra utifrån användarens input.\n" +
+    "Skriv 2–3 meningar, vardagligt och inkluderande.";
+
+  const user =
+    `Befintlig deltagarbeskrivning:\n${existing}\n\n` +
+    `Användarens tillägg eller önskemål:\n${userInput}`;
+
+  const rsp = await client.responses.create({
+    model: "gpt-4o-mini",
+    input: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  });
+
+  return (rsp as any).output_text?.trim() || "";
+}
+
+/* ---------- Handler ---------- */
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -56,102 +89,160 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
     return res.status(200).end();
   }
-  if (req.method !== "POST") return res.status(405).json({ error: "Use POST" });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Use POST" });
+  }
 
   try {
     const body = req.body as AudienceBody;
-    const step = body?.step ?? 0;
-    const input = body?.input?.trim();
-    const state = body?.state ?? {};
-    const hasAudience = body?.context?.has_audience ?? false;
+    const step = body.step ?? 0;
+    const input = body.input?.trim();
+    const state = body.state ?? {};
+    const hasAudience = body.context?.has_audience ?? false;
 
-    if (hasAudience === true && step === 0) {
+    /* ---------- Steg 0: start ---------- */
+
+    if (step === 0 && hasAudience && body.existing_audience) {
       return res.status(200).json({
         ok: true,
-        ui: [{ role: "assistant", id: "audience_refine_intro", text: "Eventet har redan en deltagarbeskrivning. Vill du eller ni förtydliga eller ändra på den?" }],
-        next_step: "refine_prompt",
+        ui: q(
+          "audience_existing",
+          "Det finns redan en deltagarbeskrivning:\n\n" +
+            body.existing_audience +
+            "\n\nVill du förbättra eller förtydliga den? Beskriv i så fall vad du vill ändra."
+        ),
+        next_step: "refine_existing",
       });
     }
 
     if (step === 0) {
       return res.status(200).json({
         ok: true,
-        ui: q("audience_pq1",
-          "Lyckade event bygger på formeln: **varför** och **för vem** ger svar på **var**, **när** och **vad**.\n\n" +
-          "Nu ska vi göra en tydlig deltagarbeskrivning som i kommande steg kan guida oss till rätt upplägg och aktiviteter.\n\n" +
-          "Börja med att kort beskriva vilka som ska delta i eventet."
+        ui: q(
+          "audience_q1",
+          "Lyckade event bygger på formeln: **varför** och **för vem**.\n\n" +
+            "Börja med att kort beskriva vilka som ska delta och vilka behov, önskemål eller förväntningar de kan ha."
         ),
-        next_step: 1
+        next_step: 1,
       });
     }
+
+    /* ---------- Steg 1: WHO + NEEDS ---------- */
 
     if (step === 1) {
-      if (!input) return res.status(400).json({ error: "Missing input (who+needs)" });
+      if (!input) {
+        return res.status(400).json({ error: "Missing input (who + needs)" });
+      }
+
       return res.status(200).json({
         ok: true,
-        ui: q("audience_pq2",
-          "Tack! Finns det några särskilda behov, önskningar eller förväntningar deltagarna kan ha?\n\n" +
-          "Exempelvis aktiviteter de gillar, saker de vill lära sig mer om, få chans att träna på?\n\n" +
-          "Eller önskemål i utvärderingar från tidigare som vi bör ha koll på?"
+        ui: q(
+          "audience_q2",
+          "En sista fråga.\n\n" +
+            "Bentigo utgår från tre deltagartyper:\n" +
+            "- Analytiker\n" +
+            "- Interaktörer\n" +
+            "- Visionärer\n\n" +
+            "Tror du att någon av dessa är vanligare i gruppen?"
         ),
-        state: { ...state, who: input },
-        next_step: 2
+        state: { ...state, who: input, needs: input },
+        next_step: 2,
       });
     }
+
+    /* ---------- Steg 2: ARCHETYPE ---------- */
 
     if (step === 2) {
-      if (!input) return res.status(400).json({ error: "Missing input (needs)" });
-      return res.status(200).json({
-        ok: true,
-        ui: q("audience_pq3",
-          "En sista fråga!\n\n" +
-          "Bentigo bygger på tre deltagartyper:\n" +
-          "- **Analytiker** *(jobbar och tänker gärna enskilt, strukturerat)*\n" +
-          "- **Interaktörer** *(jobbar och tänker gärna tillsammans, mer spontant)*\n" +
-          "- **Visionärer** *(jobbar och tänker gärna på systemnivå, med tydligt syfte och verkliga utmaningar)*\n\n" +
-          "Tror du eller ni att någon eller några av dessa kommer vara i majoritet? Ange i så fall vilken."
-        ),
-        state: { ...state, needs: input },
-        next_step: 3
-      });
-    }
+      if (!input) {
+        return res.status(400).json({ error: "Missing input (archetype)" });
+      }
 
-    if (step === 3) {
-      if (!input) return res.status(400).json({ error: "Missing input (archetype)" });
-      const fullState = { ...state, archetype: input } as Required<AudienceBody>["state"];
+      const fullState = {
+        ...state,
+        archetype: input,
+      } as Required<AudienceBody>["state"];
+
       const profile = await synthesizeAudience(fullState);
 
-      const finalMsg =
-        `Då föreslår jag denna deltagarbeskrivning:\n\n${profile}\n\n` +
-        `Vill du eller ni ändra något, eller ska vi spara denna deltagarbeskrivning?`;
-
       return res.status(200).json({
         ok: true,
-        ui: [{ role: "assistant", id: "audience_final", text: finalMsg }],
+        ui: [
+          {
+            role: "assistant",
+            id: "audience_final",
+            text:
+              "Jag föreslår denna deltagarbeskrivning:\n\n" +
+              profile +
+              "\n\nVill du ändra något, eller ska vi spara den?",
+          },
+        ],
         data: { audience_candidate: profile },
         actions: [{ type: "offer_edit_or_save", field: "audience_profile" }],
-        next_step: "done"
+        next_step: "done",
       });
     }
 
-    if (step === "final_edit") {
-      if (!input) return res.status(400).json({ error: "Missing edited audience profile" });
+    /* ---------- Förbättra befintlig ---------- */
 
-      const finalMsg =
-        `Uppdaterat förslag på deltagarbeskrivning:\n\n${input}\n\n` +
-        `Vill du eller ni ändra något mer, eller ska vi spara denna deltagarbeskrivning?`;
+    if (step === "refine_existing") {
+      if (!input || !body.existing_audience) {
+        return res
+          .status(400)
+          .json({ error: "Missing input or existing audience" });
+      }
+
+      const improved = await refineAudience(
+        body.existing_audience,
+        input
+      );
 
       return res.status(200).json({
         ok: true,
-        ui: [{ role: "assistant", id: "audience_final_edit", text: finalMsg }],
+        ui: [
+          {
+            role: "assistant",
+            id: "audience_refined",
+            text:
+              "Här är ett uppdaterat förslag:\n\n" +
+              improved +
+              "\n\nVill du ändra något mer, eller ska vi spara?",
+          },
+        ],
+        data: { audience_candidate: improved },
+        actions: [{ type: "offer_edit_or_save", field: "audience_profile" }],
+        next_step: "done",
+      });
+    }
+
+    /* ---------- Manuell slutredigering ---------- */
+
+    if (step === "final_edit") {
+      if (!input) {
+        return res.status(400).json({ error: "Missing edited audience profile" });
+      }
+
+      return res.status(200).json({
+        ok: true,
+        ui: [
+          {
+            role: "assistant",
+            id: "audience_final_edit",
+            text:
+              "Uppdaterat förslag:\n\n" +
+              input +
+              "\n\nVill du spara detta?",
+          },
+        ],
         data: { audience_candidate: input },
         actions: [{ type: "offer_edit_or_save", field: "audience_profile" }],
-        next_step: "done"
+        next_step: "done",
       });
     }
 
     return res.status(400).json({ error: "Invalid step" });
   } catch (err: any) {
-    return res.status(500).json({ error: String(err?.message ?? err) });
+    return res.status(500).json({
+      error: String(err?.message ?? err),
+    });
   }
 }
