@@ -5,12 +5,11 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 type AudienceBody = {
-  step: 0 | 1 | 2 | 3 | 4 | "final_edit";
+  step: 0 | 1 | 2 | 3 | "final_edit";
   input?: string;
   state?: {
     who?: string;
     needs?: string;
-    special?: string;
     archetype?: string;
   };
   context?: { program_id?: string | null; has_audience?: boolean | null };
@@ -31,7 +30,7 @@ async function synthesizeAudience(state: Required<AudienceBody>["state"]) {
     "- **Interaktörer** – trivs bäst när de får tänka tillsammans, prata, testa och samarbeta. De får energi av interaktion, rörelse och gemensamt skapande. Viktigt med inslag där de är aktiva.\n" +
     "- **Visionärer** – gillar att tänka stort, koppla syfte till verkliga utmaningar och se helheten. De drivs av mening, systemperspektiv och relevans. Viktigt att visa syftet, nyttan och verklighetsanknytningen.\n\n" +
     "Principer: blanda aktiviteter för att passa alla tre typer. Undvik att utgå från en norm. Skapa trygghet först. Anpassa efter olika funktionssätt och variera energi.\n\n" +
-    "Instruktion för texten: skriv en kort svensk deltagarprofil (2–3 meningar) baserat på användarens input (WHO, NEEDS, SPECIAL, ARCHETYPE). " +
+    "Instruktion för texten: skriv en kort svensk deltagarprofil (2–3 meningar) baserat på användarens input (WHO, NEEDS, ARCHETYPE). " +
     "Använd enkelt och vardagligt språk. Undvik svåra ord som 'beakta' eller 'variabilitet'. " +
     "Undvik också uttryck som kan låta negativt, som 'gräva ner sig i detaljer'. " +
     "Använd istället positiva formuleringar som 'uppskattar fördjupning', 'har sinne för detaljer' eller 'trivs med att analysera information noggrant'. " +
@@ -40,8 +39,7 @@ async function synthesizeAudience(state: Required<AudienceBody>["state"]) {
     "- Om ARCHETYPE är 'ingen', 'alla', 'osäker' eller något annat: skriv istället att deltagarna har en blandad profil och förklara att upplägget bör innehålla variation.\n" +
     "Beskriv aldrig att deltagarna är 'klassificerade som' en typ. Ge alltid en praktisk förklaring.";
 
-  const user =
-    `WHO: ${state.who}\nNEEDS: ${state.needs}\nSPECIAL: ${state.special}\nARCHETYPE: ${state.archetype}`;
+  const user = `WHO: ${state.who}\nNEEDS: ${state.needs}\nARCHETYPE: ${state.archetype}`;
 
   const rsp = await client.responses.create({
     model: "gpt-4o-mini",
@@ -88,12 +86,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (step === 1) {
-      if (!input) return res.status(400).json({ error: "Missing input (who)" });
+      if (!input) return res.status(400).json({ error: "Missing input (who+needs)" });
       return res.status(200).json({
         ok: true,
         ui: q("audience_pq2",
-          "Tack! Finns det några särskilda behov, önskningar eller förväntningar deltagarna kan ha? " +
-          "Exempelvis aktiviteter de gillar, saker de vill lära sig mer om, få chans att träna på eller något annat?"
+          "Tack! Finns det några särskilda behov, önskningar eller förväntningar deltagarna kan ha?\n\n" +
+          "Exempelvis aktiviteter de gillar, saker de vill lära sig mer om, få chans att träna på?\n\n" +
+          "Eller önskemål i utvärderingar från tidigare som vi bör ha koll på?"
         ),
         state: { ...state, who: input },
         next_step: 2
@@ -105,18 +104,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({
         ok: true,
         ui: q("audience_pq3",
-          "Finns det andra detaljer, exempelvis önskemål i utvärderingar från tidigare som vi bör ha koll på?"
-        ),
-        state: { ...state, needs: input },
-        next_step: 3
-      });
-    }
-
-    if (step === 3) {
-      if (!input) return res.status(400).json({ error: "Missing input (special)" });
-      return res.status(200).json({
-        ok: true,
-        ui: q("audience_pq4",
           "En sista fråga!\n\n" +
           "Bentigo bygger på tre deltagartyper:\n" +
           "- **Analytiker** *(jobbar och tänker gärna enskilt, strukturerat)*\n" +
@@ -124,12 +111,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           "- **Visionärer** *(jobbar och tänker gärna på systemnivå, med tydligt syfte och verkliga utmaningar)*\n\n" +
           "Tror du eller ni att någon eller några av dessa kommer vara i majoritet? Ange i så fall vilken."
         ),
-        state: { ...state, special: input },
-        next_step: 4
+        state: { ...state, needs: input },
+        next_step: 3
       });
     }
 
-    if (step === 4) {
+    if (step === 3) {
       if (!input) return res.status(400).json({ error: "Missing input (archetype)" });
       const fullState = { ...state, archetype: input } as Required<AudienceBody>["state"];
       const profile = await synthesizeAudience(fullState);
