@@ -5,56 +5,79 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 type PurposeBody = {
-  step: 0 | 1 | 2 | "final_edit";
+  step: 0 | 1 | 2 | "final_edit" | "refine_existing";
   input?: string;
-  state?: { why1?: string };
-  context?: { program_id?: string | null; has_purpose?: boolean | null };
+  state?: {
+    why1?: string;
+    why2?: string;
+  };
+  context?: {
+    program_id?: string | null;
+    has_purpose?: boolean | null;
+    existing_purpose?: string | null;
+  };
 };
 
+/* ---------- Frågetexter ---------- */
+
 const PQ1 =
-  "Ett tydligt syfte är avgörande för ett lyckat event. Det fungerar som en kompass i viktiga vägval, exempelvis vilka aktiviteter vi bör välja.\n\n" +
-  "Syftet ska svara på **varför** ett event genomförs. Helst ur både arrangörens och deltagarnas perspektiv.\n\n" +
-  "Börja med en kort beskrivning av varför det här eventet planeras?";
+  "Ett tydligt syfte är avgörande för ett lyckat event. Det fungerar som en kompass i viktiga vägval.\n\n" +
+  "Syftet ska svara på **varför** eventet genomförs – gärna både ur arrangörens och deltagarnas perspektiv.\n\n" +
+  "Börja med att kort beskriva varför det här eventet planeras.";
 
 const PQ2 =
-  "Tack! Ofta finns också **ett djupare syfte**. För att hitta det kan ni tänka på:\n" +
+  "Tack! Ofta finns också ett **djupare syfte**.\n\n" +
+  "Fundera till exempel på:\n" +
   "- Varför är det viktigt att ses just nu?\n" +
-  "- Vilken förändring vill ni se som resultat av att eventet genomförts?\n" +
-  "- Vad skulle ni kunna tappa om eventet inte genomförs?\n\n" +
-  "Försök göra en kort beskrivning av några nyttor, effekter eller förändringar som ni hoppas eventet ska leda till, både under eventet och efter att det genomförts.";
+  "- Vilken förändring vill ni se som resultat?\n" +
+  "- Vad riskerar ni att tappa om eventet inte genomförs?\n\n" +
+  "Beskriv kort vilka effekter eller nyttor ni hoppas uppnå, både under och efter eventet.";
+
+/* ---------- GPT-syntes ---------- */
 
 async function synthesizePurpose(why1: string, why2: string) {
   const system =
     "Du är Ugglan, en svensk eventassistent.\n\n" +
     "HOPA – Human Oriented Participation Architecture:\n" +
-    "HOPA visar att människor deltar och engagerar sig på olika sätt: Analytiker (struktur och reflektion), Interaktörer (samarbete och energi) och Visionärer (syfte och helhet). " +
-    "Ett bra syfte hjälper alla tre typer att förstå varför eventet finns, känna sig inkluderade och bidra på sitt sätt.\n\n" +
-    "Instruktion: Omformulera WHY1 och WHY2 till ett förädlat syfte. " +
-    "Det ska vara en tydlig och inspirerande syftesbeskrivning som pekar på den djupare intentionen och vilken effekt arrangören vill skapa genom eventet. " +
-    "Syftet ska inte bara återge utan förädla svaren. " +
-    "Syftesbeskrivningen ska bestå av 1–3 meningar och max 50 ord totalt. " +
-    "Använd enkelt, vardagligt språk. " +
-    "Undvik metaforer eller onaturliga uttryck som 'tända motivationen'. " +
-    "Använd i stället vanliga ord som 'öka motivationen', 'att arbetet känns mer inspirerande', 'stärka gemenskapen'. " +
-    "Undvik uppräkningar av aktiviteter; fokusera på intention och effekt. " +
-    "Skriv bara själva syftesbeskrivningen, inget annat.";
+    "Ett bra syfte hjälper olika deltagartyper (Analytiker, Interaktörer, Visionärer) att förstå varför eventet finns och varför deras medverkan spelar roll.\n\n" +
+    "Instruktion:\n" +
+    "- Förädla WHY1 och WHY2 till en tydlig och inspirerande syftesbeskrivning.\n" +
+    "- Fokusera på intention och önskad effekt, inte på aktiviteter.\n" +
+    "- 1–3 meningar, max 50 ord.\n" +
+    "- Använd enkelt, vardagligt språk.\n" +
+    "- Undvik metaforer och fluff.\n\n" +
+    "Skriv endast själva syftesbeskrivningen.";
 
   const user = `WHY1: ${why1}\nWHY2: ${why2}`;
+
   const rsp = await client.responses.create({
     model: "gpt-4o-mini",
-    input: [{ role: "system", content: system }, { role: "user", content: user }],
+    input: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
   });
+
   return (rsp as any).output_text?.trim() || "";
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+/* ---------- Handler ---------- */
+
+export default async function handler(
+  req: VercelRequest,
+  res: VercelResponse
+) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method === "OPTIONS") {
-    res.setHeader("Access-Control-Allow-Headers", "content-type, authorization");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "content-type, authorization"
+    );
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
     return res.status(200).end();
   }
-  if (req.method !== "POST") return res.status(405).json({ error: "Use POST" });
+  if (req.method !== "POST")
+    return res.status(405).json({ error: "Use POST" });
 
   try {
     const body = req.body as PurposeBody;
@@ -62,69 +85,125 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const input = body?.input?.trim();
     const state = body?.state ?? {};
     const hasPurpose = body?.context?.has_purpose ?? false;
+    const existingPurpose = body?.context?.existing_purpose ?? null;
 
-    // Om syfte redan finns
-    if (hasPurpose === true && step === 0) {
+    /* ---------- FALL: förfina befintligt syfte ---------- */
+
+    if (hasPurpose === true && step === 0 && existingPurpose) {
       return res.status(200).json({
         ok: true,
-        ui: [{ role: "assistant", id: "purpose_refine_intro", text: "Eventet har redan ett syfte. Vill ni förtydliga eller omformulera det?" }],
-        next_step: "refine_prompt",
+        ui: [
+          {
+            role: "assistant",
+            id: "purpose_refine_intro",
+            text:
+              "Det finns redan en syftesbeskrivning:\n\n" +
+              `**${existingPurpose}**\n\n` +
+              "Vill du förbättra eller förtydliga den? Beskriv i så fall vad du vill ändra.",
+          },
+        ],
+        next_step: "refine_existing",
+        state: {
+          why1: existingPurpose,
+          why2: "",
+        },
       });
     }
+
+    /* ---------- REFINE_EXISTING ---------- */
+
+    if (step === "refine_existing") {
+      if (!input || !state?.why1) {
+        return res
+          .status(400)
+          .json({ error: "Missing input or state for refinement" });
+      }
+
+      const fullState = {
+        why1: state.why1,
+        why2: state.why2
+          ? `${state.why2}. ${input}`
+          : input,
+      };
+
+      const purpose = await synthesizePurpose(
+        fullState.why1,
+        fullState.why2
+      );
+
+      const finalMsg =
+        `Jag har förbättrat syftet utifrån det du skrev:\n\n` +
+        `**${purpose}**\n\n` +
+        `Vill du ändra något mer, eller ska vi spara denna version?`;
+
+      return res.status(200).json({
+        ok: true,
+        ui: [{ role: "assistant", id: "purpose_refined", text: finalMsg }],
+        data: { purpose_candidate: purpose },
+        actions: [{ type: "offer_edit_or_save", field: "purpose" }],
+        next_step: "done",
+      });
+    }
+
+    /* ---------- NYTT SYFTE (ORDINARIE FLÖDE) ---------- */
 
     if (step === 0) {
       return res.status(200).json({
         ok: true,
         ui: [{ role: "assistant", id: "pq1", text: PQ1 }],
-        next_step: 1
+        next_step: 1,
       });
     }
 
     if (step === 1) {
-      if (!input) return res.status(400).json({ error: "Missing input (why1)" });
+      if (!input)
+        return res.status(400).json({ error: "Missing input (why1)" });
+
       return res.status(200).json({
         ok: true,
         ui: [{ role: "assistant", id: "pq2", text: PQ2 }],
         state: { ...state, why1: input },
-        next_step: 2
+        next_step: 2,
       });
     }
 
     if (step === 2) {
-      if (!input) return res.status(400).json({ error: "Missing input (why2)" });
-      if (!state?.why1) return res.status(400).json({ error: "Missing why1" });
+      if (!input || !state?.why1)
+        return res.status(400).json({ error: "Missing input/state" });
 
       const purpose = await synthesizePurpose(state.why1, input);
 
       const finalMsg =
-        `Snyggt! Då skulle vi kunna formulera syftet så här:\n\n` +
+        `Då föreslår jag detta syfte:\n\n` +
         `**${purpose}**\n\n` +
-        `Vill du eller ni ändra något, eller ska vi spara detta som syfte?`;
+        `Vill du eller ni ändra något, eller ska vi spara detta?`;
 
       return res.status(200).json({
         ok: true,
         ui: [{ role: "assistant", id: "purpose_final", text: finalMsg }],
         data: { purpose_candidate: purpose },
         actions: [{ type: "offer_edit_or_save", field: "purpose" }],
-        next_step: "done"
+        next_step: "done",
       });
     }
 
-    // Hantera final_edit (när användaren redigerar ett syftesförslag manuellt)
+    /* ---------- FINAL_EDIT ---------- */
+
     if (step === "final_edit") {
-      if (!input) return res.status(400).json({ error: "Missing edited purpose" });
+      if (!input)
+        return res.status(400).json({ error: "Missing edited purpose" });
 
       const finalMsg =
         `Uppdaterat förslag på syfte:\n\n` +
         `**${input}**\n\n` +
-        `Vill du eller ni ändra något mer, eller ska vi spara detta som syfte?`;
+        `Vill du ändra något mer, eller ska vi spara detta?`;
 
       return res.status(200).json({
         ok: true,
         ui: [{ role: "assistant", id: "purpose_final_edit", text: finalMsg }],
         data: { purpose_candidate: input },
         actions: [{ type: "offer_edit_or_save", field: "purpose" }],
-        next_step: "done"
+        next_step: "done",
       });
     }
 
