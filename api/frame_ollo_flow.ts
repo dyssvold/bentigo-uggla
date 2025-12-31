@@ -4,19 +4,10 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
-
-/**
- * STEG I FLÖDET
- * start
- * generate_content
- * refine
- * finalize
- */
 
 type Step = "start" | "generate_content" | "refine" | "finalize";
 
@@ -31,9 +22,7 @@ type FrameOlloBody = {
   };
 };
 
-/* -------------------------------------------------- */
-/* Helpers                                            */
-/* -------------------------------------------------- */
+/* Helpers */
 
 async function getEventContext(event_id: string) {
   const { data, error } = await supabase
@@ -46,22 +35,25 @@ async function getEventContext(event_id: string) {
   return data;
 }
 
-/**
- * A) GENERERA INNEHÅLL
- */
+function sanitizeNulls(text: string): string {
+  return text.replace(/\bnull\b/gi, "saknas");
+}
+
 async function generateFrameContent(prompt: string) {
   const system = `
 Du är Ollo, expert på inkluderande och hjärnvänliga programpunkter.
 
 Skapa ett förslag som innehåller:
 - Titel
-- Kort beskrivning
-- Ett reflektionsinslag
-- Ett interaktionsinslag
-- 3–5 steg med kort beskrivning och tidslängd per steg (max 20 min per steg)
+- Kort beskrivning (spegla syftet, men hitta inte på moment som inte nämnts)
+- Ett reflektionsinslag (eller skriv "saknas")
+- Ett interaktionsinslag (eller skriv "saknas")
+- 3–5 steg med kort beskrivning och tidslängd (max 20 min per steg)
+
+Om det föreslås lång föreläsning (>30 min), rekommendera uppdelning och pauser.
 
 Skriv konkret, praktiskt och lätt att genomföra.
-Använd inga värderande skalor eller index i detta steg.
+Använd inte "null" – skriv "saknas" istället.
 `;
 
   const rsp = await openai.chat.completions.create({
@@ -73,12 +65,9 @@ Använd inga värderande skalor eller index i detta steg.
     temperature: 0.6,
   });
 
-  return rsp.choices[0].message.content?.trim() || "";
+  return sanitizeNulls(rsp.choices[0].message.content?.trim() || "");
 }
 
-/**
- * B) ANALYSERA INNEHÅLL (NFI + Engagemang)
- */
 async function analyzeFrameContent(content: string) {
   const system = `
 Du är Ollo i analytiskt läge.
@@ -121,9 +110,31 @@ Svara ENDAST med giltig JSON enligt detta format:
   return JSON.parse(rsp.choices[0].message.content || "{}");
 }
 
-/* -------------------------------------------------- */
-/* Handler                                            */
-/* -------------------------------------------------- */
+async function olloFeedbackOnDesign(content: string) {
+  const prompt = `
+Du är Ollo. Analysera följande programpunkt och ge varsam feedback:
+
+1. Finns risk för lågt engagemang eller trötthet? (t.ex. lång föreläsning)
+2. Hur kan den göras mer deltagarvänlig?
+3. Svara med max 3 meningar. Undvik teknisk jargong.
+
+Programpunkt:
+${content}
+`;
+
+  const rsp = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: "Du är Ollo, en vänlig rådgivare." },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.5,
+  });
+
+  return rsp.choices[0].message.content?.trim();
+}
+
+/* Handler */
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -176,6 +187,7 @@ ${input}
 
       const content = await generateFrameContent(prompt);
       const analysis = await analyzeFrameContent(content);
+      const feedback = await olloFeedbackOnDesign(content);
 
       return res.json({
         ok: true,
@@ -191,6 +203,10 @@ ${input}
               `• Engagemangsnivå: ${analysis.engagement_level}\n` +
               `• NFI-index: ${analysis.nfi_index}\n\n` +
               `${analysis.motivation}`,
+          },
+          {
+            role: "assistant",
+            text: `🦉 Ollo säger:\n${feedback}`,
           },
           {
             role: "assistant",
@@ -230,6 +246,7 @@ Behåll struktur och förbättra där det behövs.
 
       const updatedContent = await generateFrameContent(prompt);
       const analysis = await analyzeFrameContent(updatedContent);
+      const feedback = await olloFeedbackOnDesign(updatedContent);
 
       return res.json({
         ok: true,
@@ -245,6 +262,10 @@ Behåll struktur och förbättra där det behövs.
               `• Engagemangsnivå: ${analysis.engagement_level}\n` +
               `• NFI-index: ${analysis.nfi_index}\n\n` +
               `${analysis.motivation}`,
+          },
+          {
+            role: "assistant",
+            text: `🦉 Ollo säger:\n${feedback}`,
           },
           {
             role: "assistant",
