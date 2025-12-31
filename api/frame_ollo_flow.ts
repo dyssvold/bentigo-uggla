@@ -4,12 +4,22 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-type Step = "start" | "generate_content" | "refine" | "finalize";
+/* -------------------------------------------------- */
+/* Types                                              */
+/* -------------------------------------------------- */
+
+type Step =
+  | "start"
+  | "analyze_intent"
+  | "generate_content"
+  | "refine"
+  | "finalize";
 
 type FrameOlloBody = {
   step: Step;
@@ -22,7 +32,9 @@ type FrameOlloBody = {
   };
 };
 
-/* Helpers */
+/* -------------------------------------------------- */
+/* Helpers                                            */
+/* -------------------------------------------------- */
 
 async function getEventContext(event_id: string) {
   const { data, error } = await supabase
@@ -39,40 +51,95 @@ function sanitizeNulls(text: string): string {
   return text.replace(/\bnull\b/gi, "saknas");
 }
 
+/* ---------- A. ANALYZE INTENT (NYTT STEG) ---------- */
+
+async function analyzeIntent(intent: string, eventContext: any) {
+  const system = `
+Du är Ollo, en erfaren och varsam rådgivare inom mötesdesign.
+
+Din uppgift:
+Analysera användarens beskrivning av en programpunkt innan något förslag skapas.
+
+Bedöm:
+- Risk för lågt engagemang
+- Risk för mental trötthet
+- Påverkan på olika deltagartyper (Analytiker, Interaktörer, Visionärer)
+- Eventuella NPF-risker
+
+VIKTIGT:
+• Hitta inte på lösningar.
+• Ge inte färdiga upplägg.
+• Var tydlig men respektfull.
+
+Svara med giltig JSON:
+{
+  "risk_level": "low" | "medium" | "high",
+  "message": "Kort rådgivande text i Ollo-ton (max 3 meningar)",
+  "recommend_adjustment": true | false
+}
+`;
+
+  const user = `
+EVENTETS SYFTE:
+${eventContext.purpose}
+
+DELTAGARPROFIL:
+${eventContext.audience_profile}
+
+PROGRAMPUNKTENS BESKRIVNING:
+${intent}
+`;
+
+  const rsp = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.2,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  });
+
+  return JSON.parse(rsp.choices[0].message.content || "{}");
+}
+
+/* ---------- B. GENERERA INNEHÅLL ---------- */
+
 async function generateFrameContent(prompt: string) {
   const system = `
 Du är Ollo, expert på inkluderande och hjärnvänliga programpunkter.
 
 Skapa ett förslag som innehåller:
 - Titel
-- Kort beskrivning (spegla syftet, men hitta inte på moment som inte nämnts)
-- Ett reflektionsinslag (eller skriv "saknas")
-- Ett interaktionsinslag (eller skriv "saknas")
-- 3–5 steg med kort beskrivning och tidslängd (max 20 min per steg)
+- Kort beskrivning (spegla exakt det som efterfrågas)
+- Reflektionsinslag (eller skriv "saknas")
+- Interaktionsinslag (eller skriv "saknas")
+- 1–5 steg med beskrivning och tidslängd (max 20 min per steg)
 
-Om det föreslås lång föreläsning (>30 min), rekommendera uppdelning och pauser.
+VIKTIGT:
+• Hitta inte på inslag som inte efterfrågats.
+• Om något saknas: skriv "saknas".
+• Använd inga värdeord som antyder engagemang om det inte finns.
 
-Skriv konkret, praktiskt och lätt att genomföra.
-Använd inte "null" – skriv "saknas" istället.
+Skriv konkret och neutralt.
 `;
 
   const rsp = await openai.chat.completions.create({
     model: "gpt-4o",
+    temperature: 0.5,
     messages: [
       { role: "system", content: system },
       { role: "user", content: prompt },
     ],
-    temperature: 0.6,
   });
 
   return sanitizeNulls(rsp.choices[0].message.content?.trim() || "");
 }
 
+/* ---------- C. ANALYS (NFI + ENGAGEMANG) ---------- */
+
 async function analyzeFrameContent(content: string) {
   const system = `
-Du är Ollo i analytiskt läge.
-
-Utvärdera programpunkten nedan enligt dessa kriterier.
+Du är Ollo i strikt analytiskt läge.
 
 ENGAGEMANGSNIVÅ (1–5):
 1 = Titta / lyssna
@@ -86,55 +153,32 @@ NFI – Neuro Friendliness Index (1–5):
 2 = Max två moment, ingen reflektion
 3 = Anpassad för en deltagartyp
 4 = Tydlig struktur, begränsade intryck, psykologisk trygghet
-5 = NPF-anpassad, varierad, flera sätt att delta, återkommande trygghetsskapande inslag
+5 = NPF-anpassad, varierad, flera sätt att delta
 
-Bedöm utifrån innehållet – inte ambitioner.
-
-Svara ENDAST med giltig JSON enligt detta format:
+Bedöm strikt utifrån innehållet.
+Svara ENDAST med JSON:
 {
   "engagement_level": number,
   "nfi_index": number,
-  "motivation": "Kort motivering (1–2 meningar)"
+  "motivation": "Kort saklig motivering"
 }
 `;
 
   const rsp = await openai.chat.completions.create({
     model: "gpt-4o-mini",
+    temperature: 0,
     messages: [
       { role: "system", content: system },
       { role: "user", content: content },
     ],
-    temperature: 0,
   });
 
   return JSON.parse(rsp.choices[0].message.content || "{}");
 }
 
-async function olloFeedbackOnDesign(content: string) {
-  const prompt = `
-Du är Ollo. Analysera följande programpunkt och ge varsam feedback:
-
-1. Finns risk för lågt engagemang eller trötthet? (t.ex. lång föreläsning)
-2. Hur kan den göras mer deltagarvänlig?
-3. Svara med max 3 meningar. Undvik teknisk jargong.
-
-Programpunkt:
-${content}
-`;
-
-  const rsp = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: "Du är Ollo, en vänlig rådgivare." },
-      { role: "user", content: prompt },
-    ],
-    temperature: 0.5,
-  });
-
-  return rsp.choices[0].message.content?.trim();
-}
-
-/* Handler */
+/* -------------------------------------------------- */
+/* Handler                                            */
+/* -------------------------------------------------- */
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -145,7 +189,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const body = req.body as FrameOlloBody;
     const { step, input, state = {} } = body;
 
-    /* -------- start -------- */
+    /* ---------- START ---------- */
     if (step === "start") {
       return res.json({
         ok: true,
@@ -159,15 +203,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             ],
           },
         ],
-        next_step: "generate_content",
+        next_step: "analyze_intent",
         state,
       });
     }
 
-    /* -------- generate_content -------- */
-    if (step === "generate_content") {
+    /* ---------- ANALYZE INTENT ---------- */
+    if (step === "analyze_intent") {
       if (!input || !state.event_id)
         return res.status(400).json({ error: "Missing input/state" });
+
+      const eventContext = await getEventContext(state.event_id);
+      const analysis = await analyzeIntent(input, eventContext);
+
+      return res.json({
+        ok: true,
+        ui: [
+          {
+            role: "assistant",
+            text: analysis.message,
+          },
+          {
+            role: "assistant",
+            buttons: analysis.recommend_adjustment
+              ? [
+                  { text: "Ja, låt oss förbättra upplägget", action: "continue" },
+                  { text: "Nej, fortsätt som beskrivet", action: "continue_anyway" },
+                ]
+              : [{ text: "Fortsätt", action: "continue" }],
+          },
+        ],
+        next_step: "generate_content",
+        state: {
+          ...state,
+          frame_purpose: input,
+        },
+      });
+    }
+
+    /* ---------- GENERATE CONTENT ---------- */
+    if (step === "generate_content") {
+      if (!state.event_id || !state.frame_purpose)
+        return res.status(400).json({ error: "Missing state" });
 
       const eventContext = await getEventContext(state.event_id);
 
@@ -178,24 +255,17 @@ ${eventContext.purpose}
 DELTAGARPROFIL:
 ${eventContext.audience_profile}
 
-PROGRAMANTECKNINGAR:
-${eventContext.program_notes || "—"}
-
-PROGRAMPUNKTENS SYFTE:
-${input}
+PROGRAMPUNKTENS BESKRIVNING:
+${state.frame_purpose}
 `;
 
       const content = await generateFrameContent(prompt);
       const analysis = await analyzeFrameContent(content);
-      const feedback = await olloFeedbackOnDesign(content);
 
       return res.json({
         ok: true,
         ui: [
-          {
-            role: "assistant",
-            text: `Här är ett förslag för programpunkten:\n\n${content}`,
-          },
+          { role: "assistant", text: `Här är ett förslag:\n\n${content}` },
           {
             role: "assistant",
             text:
@@ -204,14 +274,7 @@ ${input}
               `• NFI-index: ${analysis.nfi_index}\n\n` +
               `${analysis.motivation}`,
           },
-          {
-            role: "assistant",
-            text: `🦉 Ollo säger:\n${feedback}`,
-          },
-          {
-            role: "assistant",
-            text: "Vill du justera något, eller ska vi spara detta?",
-          },
+          { role: "assistant", text: "Vill du justera något, eller ska vi spara detta?" },
         ],
         data: {
           frame_content: content,
@@ -219,20 +282,14 @@ ${input}
           nfi_index: analysis.nfi_index,
         },
         next_step: "refine",
-        state: {
-          ...state,
-          frame_purpose: input,
-          last_content: content,
-        },
+        state: { ...state, last_content: content },
       });
     }
 
-    /* -------- refine -------- */
+    /* ---------- REFINE ---------- */
     if (step === "refine") {
-      if (!input || !state.event_id || !state.last_content)
+      if (!input || !state.last_content)
         return res.status(400).json({ error: "Missing input/state" });
-
-      const eventContext = await getEventContext(state.event_id);
 
       const prompt = `
 Utgångsförslag:
@@ -241,20 +298,16 @@ ${state.last_content}
 Användarens önskade ändringar:
 ${input}
 
-Behåll struktur och förbättra där det behövs.
+Justera endast det som efterfrågas.
 `;
 
-      const updatedContent = await generateFrameContent(prompt);
-      const analysis = await analyzeFrameContent(updatedContent);
-      const feedback = await olloFeedbackOnDesign(updatedContent);
+      const updated = await generateFrameContent(prompt);
+      const analysis = await analyzeFrameContent(updated);
 
       return res.json({
         ok: true,
         ui: [
-          {
-            role: "assistant",
-            text: `Uppdaterat förslag:\n\n${updatedContent}`,
-          },
+          { role: "assistant", text: `Uppdaterat förslag:\n\n${updated}` },
           {
             role: "assistant",
             text:
@@ -263,38 +316,24 @@ Behåll struktur och förbättra där det behövs.
               `• NFI-index: ${analysis.nfi_index}\n\n` +
               `${analysis.motivation}`,
           },
-          {
-            role: "assistant",
-            text: `🦉 Ollo säger:\n${feedback}`,
-          },
-          {
-            role: "assistant",
-            text: "Vill du justera mer, eller ska vi spara detta?",
-          },
+          { role: "assistant", text: "Vill du justera mer, eller ska vi spara detta?" },
         ],
         data: {
-          frame_content: updatedContent,
+          frame_content: updated,
           engagement_level: analysis.engagement_level,
           nfi_index: analysis.nfi_index,
         },
         next_step: "refine",
-        state: {
-          ...state,
-          last_content: updatedContent,
-        },
+        state: { ...state, last_content: updated },
       });
     }
 
-    /* -------- finalize -------- */
+    /* ---------- FINALIZE ---------- */
     if (step === "finalize") {
       return res.json({
         ok: true,
         actions: [
-          {
-            type: "save_frame_data",
-            target: "frames",
-            value: input,
-          },
+          { type: "save_frame_data", target: "frames", value: input },
         ],
         next_step: "done",
       });
