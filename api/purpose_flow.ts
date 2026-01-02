@@ -1,4 +1,3 @@
-// api/purpose_flow.ts
 import OpenAI from "openai";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
@@ -15,6 +14,7 @@ type PurposeBody = {
     program_id?: string | null;
     has_purpose?: boolean | null;
     existing_purpose?: string | null;
+    previous_feedback?: string | null; // ✅ NYTT FÄLT
   };
 };
 
@@ -35,7 +35,11 @@ const PQ2 =
 
 /* ---------- GPT-syntes ---------- */
 
-async function synthesizePurpose(why1: string, why2: string) {
+async function synthesizePurpose(
+  why1: string,
+  why2: string,
+  previous_feedback?: string | null
+) {
   const system =
     "Du är Ugglan, en svensk eventassistent.\n\n" +
     "HOPA – Human Oriented Participation Architecture:\n" +
@@ -46,19 +50,24 @@ async function synthesizePurpose(why1: string, why2: string) {
     "- 1–3 meningar, max 50 ord.\n" +
     "- Använd enkelt, vardagligt språk.\n" +
     "- Undvik metaforer och fluff.\n\n" +
+    "Om tidigare års deltagarfeedback finns, väg in den i arbetet.\n\n" +
     "Skriv endast själva syftesbeskrivningen.";
 
-  const user = `WHY1: ${why1}\nWHY2: ${why2}`;
+  const user = `WHY1: ${why1}\nWHY2: ${why2}` +
+    (previous_feedback
+      ? `\nTIDIGARE FEEDBACK: ${previous_feedback}`
+      : "");
 
-  const rsp = await client.responses.create({
+  const rsp = await client.chat.completions.create({
     model: "gpt-4o-mini",
-    input: [
+    messages: [
       { role: "system", content: system },
       { role: "user", content: user },
     ],
+    temperature: 0.4,
   });
 
-  return (rsp as any).output_text?.trim() || "";
+  return rsp.choices[0].message.content?.trim() || "";
 }
 
 /* ---------- Handler ---------- */
@@ -69,10 +78,7 @@ export default async function handler(
 ) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method === "OPTIONS") {
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "content-type, authorization"
-    );
+    res.setHeader("Access-Control-Allow-Headers", "content-type, authorization");
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
     return res.status(200).end();
   }
@@ -84,11 +90,12 @@ export default async function handler(
     const step = body?.step ?? 0;
     const input = body?.input?.trim();
     const state = body?.state ?? {};
-    const hasPurpose = body?.context?.has_purpose ?? false;
-    const existingPurpose = body?.context?.existing_purpose ?? null;
+    const ctx = body?.context ?? {};
+    const hasPurpose = ctx?.has_purpose ?? false;
+    const existingPurpose = ctx?.existing_purpose ?? null;
+    const previousFeedback = ctx?.previous_feedback ?? null;
 
     /* ---------- FALL: förfina befintligt syfte ---------- */
-
     if (hasPurpose === true && step === 0 && existingPurpose) {
       return res.status(200).json({
         ok: true,
@@ -111,7 +118,6 @@ export default async function handler(
     }
 
     /* ---------- REFINE_EXISTING ---------- */
-
     if (step === "refine_existing") {
       if (!input || !state?.why1) {
         return res
@@ -128,7 +134,8 @@ export default async function handler(
 
       const purpose = await synthesizePurpose(
         fullState.why1,
-        fullState.why2
+        fullState.why2,
+        previousFeedback
       );
 
       const finalMsg =
@@ -146,7 +153,6 @@ export default async function handler(
     }
 
     /* ---------- NYTT SYFTE (ORDINARIE FLÖDE) ---------- */
-
     if (step === 0) {
       return res.status(200).json({
         ok: true,
@@ -171,7 +177,11 @@ export default async function handler(
       if (!input || !state?.why1)
         return res.status(400).json({ error: "Missing input/state" });
 
-      const purpose = await synthesizePurpose(state.why1, input);
+      const purpose = await synthesizePurpose(
+        state.why1,
+        input,
+        previousFeedback
+      );
 
       const finalMsg =
         `Då föreslår jag detta syfte:\n\n` +
@@ -188,7 +198,6 @@ export default async function handler(
     }
 
     /* ---------- FINAL_EDIT ---------- */
-
     if (step === "final_edit") {
       if (!input)
         return res.status(400).json({ error: "Missing edited purpose" });
