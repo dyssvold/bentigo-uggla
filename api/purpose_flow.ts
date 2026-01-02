@@ -4,17 +4,18 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 type PurposeBody = {
-  step: 0 | 1 | 2 | "final_edit" | "refine_existing";
+  step: 0 | 1 | 2 | "final_edit" | "refine_existing" | "ask_feedback";
   input?: string;
   state?: {
     why1?: string;
     why2?: string;
+    previous_feedback?: string;
   };
   context?: {
     program_id?: string | null;
     has_purpose?: boolean | null;
     existing_purpose?: string | null;
-    previous_feedback?: string | null; // ✅ NYTT FÄLT
+    previous_feedback?: string | null;
   };
 };
 
@@ -54,8 +55,8 @@ async function synthesizePurpose(
     "Skriv endast själva syftesbeskrivningen.";
 
   const user = `WHY1: ${why1}\nWHY2: ${why2}` +
-    (previous_feedback
-      ? `\nTIDIGARE FEEDBACK: ${previous_feedback}`
+    (previous_feedback?.trim()
+      ? `\nTIDIGARE FEEDBACK: ${previous_feedback.trim()}`
       : "");
 
   const rsp = await client.chat.completions.create({
@@ -117,47 +118,51 @@ export default async function handler(
       });
     }
 
-    /* ---------- REFINE_EXISTING ---------- */
-    if (step === "refine_existing") {
-      if (!input || !state?.why1) {
-        return res
-          .status(400)
-          .json({ error: "Missing input or state for refinement" });
+    /* ---------- NYTT SYFTE: fråga om tidigare feedback om det saknas ---------- */
+    if (step === 0) {
+      if (!previousFeedback || previousFeedback.trim() === "") {
+        return res.status(200).json({
+          ok: true,
+          ui: [
+            {
+              role: "assistant",
+              id: "ask_previous_feedback",
+              text:
+                "Finns det något från tidigare års utvärderingar eller deltagarfeedback som vi bör ta hänsyn till när vi formulerar syftet?",
+            },
+          ],
+          next_step: "ask_feedback",
+        });
       }
 
-      const fullState = {
-        why1: state.why1,
-        why2: state.why2
-          ? `${state.why2}. ${input}`
-          : input,
-      };
-
-      const purpose = await synthesizePurpose(
-        fullState.why1,
-        fullState.why2,
-        previousFeedback
-      );
-
-      const finalMsg =
-        `Jag har förbättrat syftet utifrån det du skrev:\n\n` +
-        `**${purpose}**\n\n` +
-        `Vill du ändra något mer, eller ska vi spara denna version?`;
-
-      return res.status(200).json({
-        ok: true,
-        ui: [{ role: "assistant", id: "purpose_refined", text: finalMsg }],
-        data: { purpose_candidate: purpose },
-        actions: [{ type: "offer_edit_or_save", field: "purpose" }],
-        next_step: "done",
-      });
-    }
-
-    /* ---------- NYTT SYFTE (ORDINARIE FLÖDE) ---------- */
-    if (step === 0) {
       return res.status(200).json({
         ok: true,
         ui: [{ role: "assistant", id: "pq1", text: PQ1 }],
         next_step: 1,
+        state: {
+          previous_feedback: previousFeedback,
+        },
+      });
+    }
+
+    /* ---------- Nytt steg: ask_feedback ---------- */
+    if (step === "ask_feedback") {
+      const feedback = input?.trim() || "";
+
+      return res.status(200).json({
+        ok: true,
+        ui: [{ role: "assistant", id: "pq1", text: PQ1 }],
+        next_step: 1,
+        state: {
+          previous_feedback: feedback,
+        },
+        actions: [
+          {
+            type: "save_context_field",
+            field: "previous_feedback",
+            value: feedback,
+          },
+        ],
       });
     }
 
@@ -180,7 +185,7 @@ export default async function handler(
       const purpose = await synthesizePurpose(
         state.why1,
         input,
-        previousFeedback
+        state.previous_feedback
       );
 
       const finalMsg =
@@ -211,6 +216,41 @@ export default async function handler(
         ok: true,
         ui: [{ role: "assistant", id: "purpose_final_edit", text: finalMsg }],
         data: { purpose_candidate: input },
+        actions: [{ type: "offer_edit_or_save", field: "purpose" }],
+        next_step: "done",
+      });
+    }
+
+    /* ---------- REFINE_EXISTING ---------- */
+    if (step === "refine_existing") {
+      if (!input || !state?.why1) {
+        return res
+          .status(400)
+          .json({ error: "Missing input or state for refinement" });
+      }
+
+      const fullState = {
+        why1: state.why1,
+        why2: state.why2
+          ? `${state.why2}. ${input}`
+          : input,
+      };
+
+      const purpose = await synthesizePurpose(
+        fullState.why1,
+        fullState.why2,
+        state.previous_feedback ?? previousFeedback
+      );
+
+      const finalMsg =
+        `Jag har förbättrat syftet utifrån det du skrev:\n\n` +
+        `**${purpose}**\n\n` +
+        `Vill du ändra något mer, eller ska vi spara denna version?`;
+
+      return res.status(200).json({
+        ok: true,
+        ui: [{ role: "assistant", id: "purpose_refined", text: finalMsg }],
+        data: { purpose_candidate: purpose },
         actions: [{ type: "offer_edit_or_save", field: "purpose" }],
         next_step: "done",
       });
