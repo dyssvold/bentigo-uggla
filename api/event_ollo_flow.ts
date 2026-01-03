@@ -27,6 +27,7 @@ type EventOlloBody = {
     field?: EventField;
     existing_value?: string;
     last_proposal?: string;
+    must_include?: string[];
   };
   context?: {
     field?: EventField;
@@ -86,17 +87,13 @@ Svara ENDAST med giltig JSON:
   "improvements": string[],
   "needs_clarification": boolean,
   "clarifying_question": string | null
-}
-`;
+}`;
 
   const rsp = await client.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [
       { role: "system", content: system },
-      {
-        role: "user",
-        content: `TEXT:\n${text}`,
-      },
+      { role: "user", content: `TEXT:\n${text}` },
     ],
     temperature: 0.2,
   });
@@ -109,7 +106,8 @@ Svara ENDAST med giltig JSON:
 async function proposeImproved(
   field: EventField,
   baseText: string,
-  adjustment?: string
+  adjustment?: string,
+  mustInclude: string[] = []
 ) {
   const system = `
 Du är Ollo.
@@ -122,9 +120,12 @@ VIKTIGA REGLER:
 - Hitta inte på innehåll som inte stöds av användarens input.
 - Förbättra tydlighet, begriplighet och relevans – inte omfattning.
 - Anpassa ton efter fältets funktion.
-
-Svara ENDAST med det färdiga förslaget. Inga kommentarer.
-`;
+- Om användaren har upprepat ett krav flera gånger (t.ex. att ett visst uttryck ska finnas med), se till att det aldrig tappas i förslaget.
+- Använd små bokstäver förutom första ordet i namn (inga inledande versaler i varje ord).
+` + (mustInclude.length > 0 ? `
+Inkludera alltid följande uttryck i resultatet:
+${mustInclude.map(e => `- ${e}`).join("\n")}
+` : "");
 
   const user =
     `UTGÅNGSTEXT:\n${baseText}\n\n` +
@@ -155,8 +156,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { step, input, state = {}, context = {} } = body;
 
     const field = state.field || context.field;
-    const existingValue =
-      state.existing_value ?? context.existing_value ?? "";
+    const existingValue = state.existing_value ?? context.existing_value ?? "";
+    const mustInclude = state.must_include ?? [];
 
     if (!field)
       return res.status(400).json({ error: "Missing field context" });
@@ -179,7 +180,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           },
         ],
         next_step: "analyze",
-        state: { field, existing_value: existingValue },
+        state: { field, existing_value: existingValue, must_include: [] },
       });
     }
 
@@ -196,22 +197,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
-      const proposal = await proposeImproved(field, existingValue);
+      const proposal = await proposeImproved(field, existingValue, undefined, mustInclude);
 
       return res.json({
         ok: true,
         ui: [
-          {
-            role: "assistant",
-            text: `Här är ett förbättrat förslag:\n\n${proposal}`,
-          },
-          {
-            role: "assistant",
-            buttons: [
-              { text: "Justera", action: "refine" },
-              { text: "Spara", action: "finalize" },
-            ],
-          },
+          { role: "assistant", text: `Här är ett förbättrat förslag:\n\n${proposal}` },
+          { role: "assistant", buttons: [
+            { text: "Justera", action: "refine" },
+            { text: "Spara", action: "finalize" },
+          ] },
         ],
         next_step: "refine",
         state: { ...state, last_proposal: proposal },
@@ -220,22 +215,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     /* -------- ask_clarifying -------- */
     if (step === "ask_clarifying") {
-      const proposal = await proposeImproved(field, existingValue, input);
+      const proposal = await proposeImproved(field, existingValue, input, mustInclude);
 
       return res.json({
         ok: true,
         ui: [
-          {
-            role: "assistant",
-            text: `Tack! Här är ett första förslag:\n\n${proposal}`,
-          },
-          {
-            role: "assistant",
-            buttons: [
-              { text: "Justera", action: "refine" },
-              { text: "Spara", action: "finalize" },
-            ],
-          },
+          { role: "assistant", text: `Tack! Här är ett första förslag:\n\n${proposal}` },
+          { role: "assistant", buttons: [
+            { text: "Justera", action: "refine" },
+            { text: "Spara", action: "finalize" },
+          ] },
         ],
         next_step: "refine",
         state: { ...state, last_proposal: proposal },
@@ -247,23 +236,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const proposal = await proposeImproved(
         field,
         state.last_proposal || existingValue,
-        input
+        input,
+        mustInclude
       );
 
       return res.json({
         ok: true,
         ui: [
-          {
-            role: "assistant",
-            text: `Uppdaterat förslag:\n\n${proposal}`,
-          },
-          {
-            role: "assistant",
-            buttons: [
-              { text: "Justera mer", action: "refine" },
-              { text: "Spara", action: "finalize" },
-            ],
-          },
+          { role: "assistant", text: `Uppdaterat förslag:\n\n${proposal}` },
+          { role: "assistant", buttons: [
+            { text: "Justera mer", action: "refine" },
+            { text: "Spara", action: "finalize" },
+          ] },
         ],
         next_step: "refine",
         state: { ...state, last_proposal: proposal },
@@ -275,11 +259,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json({
         ok: true,
         actions: [
-          {
-            type: "save_event_field",
-            field,
-            value: state.last_proposal,
-          },
+          { type: "save_event_field", field, value: state.last_proposal },
         ],
         next_step: "done",
       });
