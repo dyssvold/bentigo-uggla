@@ -3,6 +3,8 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+/* ---------------- Types ---------------- */
+
 type Step =
   | "start"
   | "analyze"
@@ -10,6 +12,13 @@ type Step =
   | "propose"
   | "refine"
   | "finalize";
+
+type EventField =
+  | "event_name"
+  | "event_description"
+  | "public_description"
+  | "purpose"
+  | "audience_profile";
 
 type EventOlloBody = {
   step: Step;
@@ -25,14 +34,7 @@ type EventOlloBody = {
   };
 };
 
-type EventField =
-  | "event_name"
-  | "event_description"
-  | "public_description"
-  | "purpose"
-  | "audience_profile";
-
-/* ----------------------- Helpers ----------------------- */
+/* ---------------- Field helpers ---------------- */
 
 function fieldLabel(field: EventField) {
   return {
@@ -47,31 +49,38 @@ function fieldLabel(field: EventField) {
 function fieldInstruction(field: EventField) {
   return {
     event_name:
-      "Skapa eller förbättra ett tydligt, förklarande och säljande namn.",
+      "Skapa eller förbättra ett kort, tydligt och säljande namn som förklarar vad eventet handlar om.",
     event_description:
-      "Skapa eller förbättra en beskrivning som förklarar vad eventet är, för vem och varför.",
+      "Skapa eller förbättra en beskrivning som tydligt förklarar vad eventet är, varför det genomförs och vad deltagaren kan förvänta sig.",
     public_description:
-      "Skapa eller förbättra en lockande publik text som gör att rätt målgrupp vill delta.",
+      "Skapa eller förbättra en publik text som lockar rätt målgrupp och är lätt att förstå även utan intern kontext.",
     purpose:
-      "Skapa eller förbättra en syftesbeskrivning som tydliggör intention och önskad effekt.",
+      "Skapa eller förbättra en syftesbeskrivning som tydliggör varför eventet genomförs och vilken effekt man vill uppnå.",
     audience_profile:
-      "Skapa eller förbättra en deltagarbeskrivning som tydliggör vilka deltagarna är och deras behov.",
+      "Skapa eller förbättra en deltagarbeskrivning som tydliggör vilka deltagarna är, deras behov och hur upplägget bör anpassas.",
   }[field];
 }
 
-/* ---------------- GPT calls ---------------- */
+/* ---------------- GPT: analysis ---------------- */
 
 async function analyzeExisting(field: EventField, text: string) {
   const system = `
 Du är Ollo, en erfaren rådgivare för mötes- och eventdesign.
 
-Analysera texten kort.
-Svara med:
-- 1–2 styrkor
-- 1–2 möjliga förbättringar
-- om du behöver mer information innan förbättring (true/false)
+Analysera texten för fältet "${field}".
 
-Svara ENDAST i JSON:
+Identifiera:
+- 1–2 styrkor
+- 1–2 konkreta förbättringsområden
+
+Var särskilt uppmärksam på:
+- Om texten är för generisk (t.ex. "Frukostseminarium", "Konferens 2025")
+- Om texten är otydlig, intern eller svårbegriplig
+- Om viktig kontext saknas för att kunna förbättra texten
+
+Avgör om du behöver ställa en följdfråga innan du kan ge ett bra förslag.
+
+Svara ENDAST med giltig JSON:
 {
   "strengths": string[],
   "improvements": string[],
@@ -86,14 +95,16 @@ Svara ENDAST i JSON:
       { role: "system", content: system },
       {
         role: "user",
-        content: `FÄLT: ${field}\nTEXT:\n${text}`,
+        content: `TEXT:\n${text}`,
       },
     ],
-    temperature: 0.3,
+    temperature: 0.2,
   });
 
   return JSON.parse(rsp.choices[0].message.content || "{}");
 }
+
+/* ---------------- GPT: propose / refine ---------------- */
 
 async function proposeImproved(
   field: EventField,
@@ -105,18 +116,19 @@ Du är Ollo.
 
 ${fieldInstruction(field)}
 
-Regler:
-- Hitta inte på innehåll som inte stöds.
-- Förbättra tydlighet, relevans och språk.
+VIKTIGA REGLER:
+- Om användaren ger ett konkret förslag (t.ex. "ändra till X"), använd X som slutresultat.
+- Kombinera inte med tidigare formuleringar om användaren varit tydlig.
+- Hitta inte på innehåll som inte stöds av användarens input.
+- Förbättra tydlighet, begriplighet och relevans – inte omfattning.
 - Anpassa ton efter fältets funktion.
-- Skriv sakligt, tryggt och inbjudande.
 
-Svara endast med förbättrat förslag.
+Svara ENDAST med det färdiga förslaget. Inga kommentarer.
 `;
 
   const user =
     `UTGÅNGSTEXT:\n${baseText}\n\n` +
-    (adjustment ? `ANVÄNDARENS ÖNSKAN:\n${adjustment}` : "");
+    (adjustment ? `ANVÄNDARENS INSTRUKTION:\n${adjustment}` : "");
 
   const rsp = await client.chat.completions.create({
     model: "gpt-4o",
@@ -124,13 +136,13 @@ Svara endast med förbättrat förslag.
       { role: "system", content: system },
       { role: "user", content: user },
     ],
-    temperature: 0.5,
+    temperature: 0.35,
   });
 
   return rsp.choices[0].message.content?.trim() || "";
 }
 
-/* ----------------------- Handler ----------------------- */
+/* ---------------- Handler ---------------- */
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -162,7 +174,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               "Vill du ha hjälp att förbättra den?",
             buttons: [
               { text: "Ja, gärna", action: "continue" },
-              { text: "Inte just nu", action: "cancel" },
+              { text: "Avbryt", action: "cancel" },
             ],
           },
         ],
@@ -178,12 +190,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (analysis.needs_clarification && analysis.clarifying_question) {
         return res.json({
           ok: true,
-          ui: [
-            {
-              role: "assistant",
-              text: analysis.clarifying_question,
-            },
-          ],
+          ui: [{ role: "assistant", text: analysis.clarifying_question }],
           next_step: "ask_clarifying",
           state,
         });
@@ -213,18 +220,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     /* -------- ask_clarifying -------- */
     if (step === "ask_clarifying") {
-      const proposal = await proposeImproved(
-        field,
-        existingValue,
-        input
-      );
+      const proposal = await proposeImproved(field, existingValue, input);
 
       return res.json({
         ok: true,
         ui: [
           {
             role: "assistant",
-            text: `Tack! Här är ett första förbättrat förslag:\n\n${proposal}`,
+            text: `Tack! Här är ett första förslag:\n\n${proposal}`,
           },
           {
             role: "assistant",
