@@ -28,16 +28,11 @@ type EventWizardBody = {
     field: EventField;
     existing_value?: string;
     last_proposal?: string;
-    must_include?: string[];
+    proposals?: string[];
   };
   context?: {
     field: EventField;
-    existing_value?: string | null;
     event_name?: string;
-    subtitle?: string;
-    target_group?: string;
-    previous_feedback?: string;
-    purpose?: string;
   };
 };
 
@@ -45,173 +40,198 @@ type EventWizardBody = {
 
 function fieldInstruction(field: EventField): string {
   return {
-    subtitle: "Skapa en kort underrubrik (max 8 ord) som fångar eventets tema eller fokus.",
-    target_group: "Sammanfatta målgruppen i en löpande text, max 50 ord, utifrån tre nivåer av deltagare (obligatoriska, gärna, i mån av plats).",
-    previous_feedback: "Sammanfatta relevant deltagarfeedback från tidigare event i max 50 ord.",
-    purpose: "Skapa en syftesbeskrivning (max 50 ord) baserat på användarens input och tidigare metadata.",
-    audience_profile: "Skapa en deltagarbeskrivning (max 60 ord) som inleds med 'Deltagarna är…' och bygger på input och metadata.",
-    program_notes: "Skapa en objektiv beskrivning (max 60 ord) av eventet baserat på metadata.",
-    public_description: "Skapa en publik beskrivning (max 80 ord) som lockar deltagare och baseras på tidigare fält."
+    subtitle:
+      "Skapa en kort underrubrik eller tagline, max 8 ord. Upprepa inte eventnamnet.",
+    target_group:
+      "Sammanfatta målgruppen i löpande text, max 50 ord.",
+    previous_feedback:
+      "Sammanfatta relevant tidigare feedback, max 50 ord.",
+    purpose:
+      "Skapa en syftesbeskrivning, max 50 ord.",
+    audience_profile:
+      "Skapa en deltagarbeskrivning, max 60 ord.",
+    program_notes:
+      "Skapa en objektiv eventbeskrivning, max 60 ord.",
+    public_description:
+      "Skapa en säljande publik text, max 80 ord."
   }[field];
 }
 
-function normalizeMustInclude(list: string[] = []): string[] {
-  return Array.from(new Set(list.map(s => s.trim()).filter(Boolean)));
-}
+/* ---------------- GPT: subtitle proposals ---------------- */
 
-function containsAllMustInclude(text: string, mustInclude: string[]): boolean {
-  return mustInclude.every(req => text.includes(req));
-}
-
-/* ---------------- GPT: propose ---------------- */
-
-async function proposeImproved(
-  field: EventField,
-  baseText: string,
-  adjustment?: string,
-  mustInclude: string[] = [],
-  context?: EventWizardBody["context"]
-): Promise<string> {
-  const normalizedMust = normalizeMustInclude(mustInclude);
-
+async function proposeMultipleSubtitles(
+  themeInput: string,
+  eventName?: string
+): Promise<string[]> {
   const system = `
 Du är Ollo.
 
-${fieldInstruction(field)}
+Skapa MAX 3 alternativa underrubriker för ett event.
 
-FÖLJ DESSA PRINCIPER:
-- Följ instruktioner ordagrant om de är tydliga.
-- Förbättra tydlighet, struktur och språk – inte längd.
-- Inkludera metadata där det hjälper.
-- Inkludera exakt stavning, versaler och ordning på uttryck som ska vara med.
+KRAV:
+- Max 8 ord per underrubrik
+- Upprepa inte eventnamnet
+- Ingen punkt i slutet
+- Varje förslag ska kunna stå ensamt
+- Undvik marknadsfloskler
 
-${normalizedMust.length ? `Följande uttryck MÅSTE finnas med exakt:\n${normalizedMust.map(e => `- ${e}`).join("\n")}` : ""}
+Eventnamn (endast som kontext, ska inte upprepas):
+${eventName ?? ""}
 
-Använd följande metadata vid behov:
-- Eventnamn: ${context?.event_name ?? ""}
-- Underrubrik: ${context?.subtitle ?? ""}
-- Målgrupp: ${context?.target_group ?? ""}
-- Tidigare feedback: ${context?.previous_feedback ?? ""}
-- Syfte: ${context?.purpose ?? ""}
-  `.trim();
+Svara ENDAST som JSON-array:
+["förslag 1", "förslag 2", "förslag 3"]
+`;
 
-  const user = `UTGÅNGSTEXT:\n${baseText}\n\n${adjustment ? `ANVÄNDARENS INSTRUKTION:\n${adjustment}` : ""}`;
+  const user = `
+Tema, fokus eller riktning för eventet:
+${themeInput}
+`;
 
   const rsp = await client.chat.completions.create({
     model: "gpt-4o",
     messages: [
       { role: "system", content: system },
-      { role: "user", content: user },
+      { role: "user", content: user }
     ],
-    temperature: 0.3,
+    temperature: 0.4
   });
 
-  const proposal = rsp.choices[0].message.content?.trim() || "";
+  return JSON.parse(rsp.choices[0].message.content || "[]");
+}
 
-  if (!containsAllMustInclude(proposal, normalizedMust)) {
-    return proposeImproved(field, baseText, "OBLIGATORISKT UTTRYCK SAKNAS. FÖRSÖK IGEN.", normalizedMust, context);
-  }
+/* ---------------- GPT: refine ---------------- */
 
-  return proposal;
+async function refineSubtitle(
+  base: string,
+  adjustment: string
+): Promise<string> {
+  const system = `
+Du är Ollo.
+
+Justera underrubriken nedan enligt användarens instruktion.
+
+REGLER:
+- Max 8 ord
+- Upprepa inte eventnamn
+- Endast inledande versal i första ordet
+- Ingen punkt i slutet
+
+Svara ENDAST med den färdiga underrubriken.
+`;
+
+  const user = `
+NUVARANDE UNDERRUBRIK:
+${base}
+
+ANVÄNDARENS JUSTERING:
+${adjustment}
+`;
+
+  const rsp = await client.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user }
+    ],
+    temperature: 0.3
+  });
+
+  return rsp.choices[0].message.content?.trim() || "";
 }
 
 /* ---------------- Handler ---------------- */
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(
+  req: VercelRequest,
+  res: VercelResponse
+) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).json({ error: "Use POST" });
+  if (req.method !== "POST")
+    return res.status(405).json({ error: "Use POST" });
 
   try {
     const body = req.body as EventWizardBody;
     const { step, input, state = {}, context = {} } = body;
-    const field = state.field || context.field;
-    const existingValue = state.existing_value ?? context.existing_value ?? "";
-    const mustInclude = normalizeMustInclude(state.must_include);
+    const { field } = state;
 
-    if (!field) return res.status(400).json({ error: "Missing field context" });
+    if (!field) {
+      return res.status(400).json({ error: "Missing field" });
+    }
 
     /* -------- start -------- */
-    if (step === "start") {
+    if (step === "start" && field === "subtitle") {
       return res.json({
         ok: true,
-        ui: [{
-          role: "assistant",
-          text: existingValue
-            ? `Följande text finns redan sparad för detta fält:\n\n${existingValue}\n\nVill du förbättra den med min hjälp?`
-            : `Vill du att jag hjälper dig att skapa ${fieldInstruction(field).toLowerCase()}`,
-          buttons: [
-            { text: "Ja, gärna", action: "clarify" },
-            { text: "Nej tack", action: "cancel" },
-          ],
-        }],
+        ui: [
+          {
+            role: "assistant",
+            text:
+              "Kommer detta event att ha ett speciellt tema, fokus eller liknande?\n\n" +
+              "Finns det någon fråga, trend, utmaning eller möjlighet som får större utrymme i programmet?",
+          }
+        ],
         next_step: "clarify",
-        state: { field, existing_value: existingValue },
+        state: { field }
       });
     }
 
-    /* -------- clarify -------- */
-    if (step === "clarify") {
-      const updatedMust = input
-        ? normalizeMustInclude([...mustInclude, input])
-        : mustInclude;
-
-      const proposal = await proposeImproved(
-        field,
-        existingValue,
-        undefined,
-        updatedMust,
-        context
+    /* -------- clarify -> propose -------- */
+    if (step === "clarify" && field === "subtitle") {
+      const proposals = await proposeMultipleSubtitles(
+        input || "",
+        context.event_name
       );
 
       return res.json({
         ok: true,
         ui: [
-          { role: "assistant", text: `Här är ett förslag:\n\n${proposal}` },
           {
             role: "assistant",
-            buttons: [
-              { text: "Justera", action: "refine" },
-              { text: "Spara", action: "finalize" },
-            ],
-          },
+            text: "Här är tre förslag på underrubrik:",
+            options: proposals.map((p, index) => ({
+              id: index,
+              text: p,
+              actions: [
+                { text: "Välj", action: "finalize", value: p },
+                { text: "Redigera", action: "refine", value: p }
+              ]
+            }))
+          }
         ],
-        next_step: "refine",
+        next_step: "propose",
         state: {
           ...state,
-          must_include: updatedMust,
-          last_proposal: proposal,
-        },
+          proposals
+        }
       });
     }
 
     /* -------- refine -------- */
-    if (step === "refine") {
-      const proposal = await proposeImproved(
-        field,
-        state.last_proposal || existingValue,
-        input,
-        mustInclude,
-        context
+    if (step === "refine" && field === "subtitle") {
+      const refined = await refineSubtitle(
+        state.last_proposal || "",
+        input || ""
       );
 
       return res.json({
         ok: true,
         ui: [
-          { role: "assistant", text: `Uppdaterat förslag:\n\n${proposal}` },
           {
             role: "assistant",
-            buttons: [
-              { text: "Justera mer", action: "refine" },
-              { text: "Spara", action: "finalize" },
-            ],
-          },
+            text: "Uppdaterat förslag:",
+            value: refined,
+            actions: [
+              { text: "Spara", action: "finalize", value: refined },
+              { text: "Justera mer", action: "refine" }
+            ]
+          }
         ],
         next_step: "refine",
         state: {
           ...state,
-          last_proposal: proposal,
-        },
+          last_proposal: refined
+        }
       });
     }
 
@@ -219,12 +239,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (step === "finalize") {
       return res.json({
         ok: true,
-        actions: [{
-          type: "save_event_field",
-          field,
-          value: state.last_proposal,
-        }],
-        next_step: "done",
+        actions: [
+          {
+            type: "save_event_field",
+            field,
+            value: input || state.last_proposal
+          }
+        ],
+        next_step: "done"
       });
     }
 
