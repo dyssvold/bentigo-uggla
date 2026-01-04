@@ -35,7 +35,7 @@ type EventOlloBody = {
   };
 };
 
-/* ---------------- Field helpers ---------------- */
+/* ---------------- Helpers ---------------- */
 
 function fieldLabel(field: EventField) {
   return {
@@ -50,16 +50,26 @@ function fieldLabel(field: EventField) {
 function fieldInstruction(field: EventField) {
   return {
     event_name:
-      "Skapa eller förbättra ett kort, tydligt och säljande namn som förklarar vad eventet handlar om.",
+      "Skapa eller förbättra ett kort, tydligt och förklarande namn för eventet.",
     event_description:
       "Skapa eller förbättra en beskrivning som tydligt förklarar vad eventet är, varför det genomförs och vad deltagaren kan förvänta sig.",
     public_description:
-      "Skapa eller förbättra en publik text som lockar rätt målgrupp och är lätt att förstå även utan intern kontext.",
+      "Skapa eller förbättra en publik text som lockar rätt målgrupp och är lätt att förstå utan intern kontext.",
     purpose:
       "Skapa eller förbättra en syftesbeskrivning som tydliggör varför eventet genomförs och vilken effekt man vill uppnå.",
     audience_profile:
-      "Skapa eller förbättra en deltagarbeskrivning som tydliggör vilka deltagarna är, deras behov och hur upplägget bör anpassas.",
+      "Skapa eller förbättra en deltagarbeskrivning som tydliggör vilka deltagarna är och deras behov.",
   }[field];
+}
+
+function normalizeMustInclude(list: string[] = []) {
+  return Array.from(
+    new Set(list.map(s => s.trim()).filter(Boolean))
+  );
+}
+
+function containsAllMustInclude(text: string, mustInclude: string[]) {
+  return mustInclude.every(req => text.includes(req));
 }
 
 /* ---------------- GPT: analysis ---------------- */
@@ -75,9 +85,9 @@ Identifiera:
 - 1–2 konkreta förbättringsområden
 
 Var särskilt uppmärksam på:
-- Om texten är för generisk (t.ex. "Frukostseminarium", "Konferens 2025")
-- Om texten är otydlig, intern eller svårbegriplig
-- Om viktig kontext saknas för att kunna förbättra texten
+- Om texten är för generisk
+- Om texten är otydlig eller intern
+- Om viktig kontext saknas
 
 Avgör om du behöver ställa en följdfråga innan du kan ge ett bra förslag.
 
@@ -87,7 +97,8 @@ Svara ENDAST med giltig JSON:
   "improvements": string[],
   "needs_clarification": boolean,
   "clarifying_question": string | null
-}`;
+}
+`;
 
   const rsp = await client.chat.completions.create({
     model: "gpt-4o-mini",
@@ -109,20 +120,31 @@ async function proposeImproved(
   adjustment?: string,
   mustInclude: string[] = []
 ) {
+  const normalizedMust = normalizeMustInclude(mustInclude);
+
   const system = `
 Du är Ollo.
 
 ${fieldInstruction(field)}
 
 VIKTIGA REGLER:
-- Om användaren ger ett konkret förslag (t.ex. "ändra till X"), använd X som slutresultat.
+- Om användaren anger exakt vad som ska ändras, följ det ordagrant.
 - Kombinera inte med tidigare formuleringar om användaren varit tydlig.
-- Hitta inte på innehåll som inte stöds av användarens input.
-- Förbättra tydlighet, begriplighet och relevans – inte omfattning.
+- Hitta inte på innehåll.
+- Förbättra tydlighet och begriplighet, inte längd.
 - Anpassa ton efter fältets funktion.
-- Om användaren har upprepat ett krav flera gånger (t.ex. att ett visst uttryck ska finnas med), se till att det aldrig tappas i förslaget.
-- Använd små bokstäver förutom första ordet i namn (inga inledande versaler i varje ord).
-${mustInclude.length > 0 ? `Inkludera alltid följande uttryck i resultatet:\n${mustInclude.map(e => `- ${e}`).join("\n")}` : ""}
+
+FORMATREGLER (viktigt):
+- Eventnamn: endast inledande versal i första ordet.
+- Behåll exakt stavning, versaler och ordning i uttryck som MÅSTE finnas med.
+- Tappa aldrig bort krav som användaren upprepat.
+
+${
+  normalizedMust.length
+    ? `Följande uttryck MÅSTE finnas med exakt som de är skrivna:
+${normalizedMust.map(e => `- ${e}`).join("\n")}`
+    : ""
+}
 `;
 
   const user =
@@ -135,10 +157,23 @@ ${mustInclude.length > 0 ? `Inkludera alltid följande uttryck i resultatet:\n${
       { role: "system", content: system },
       { role: "user", content: user },
     ],
-    temperature: 0.35,
+    temperature: 0.3,
   });
 
-  return rsp.choices[0].message.content?.trim() || "";
+  const proposal = rsp.choices[0].message.content?.trim() || "";
+
+  // 🔒 Säkerställ must_include verkligen finns med
+  if (!containsAllMustInclude(proposal, normalizedMust)) {
+    // fallback: försök igen, ännu striktare
+    return proposeImproved(
+      field,
+      baseText,
+      `${adjustment ?? ""}\n\nOBS: Du missade att inkludera ett obligatoriskt uttryck. Försök igen.`,
+      normalizedMust
+    );
+  }
+
+  return proposal;
 }
 
 /* ---------------- Handler ---------------- */
@@ -155,10 +190,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const field = state.field || context.field;
     const existingValue = state.existing_value ?? context.existing_value ?? "";
-    const mustInclude = state.must_include ?? [];
+    const mustInclude = normalizeMustInclude(state.must_include);
 
-    if (!field)
+    if (!field) {
       return res.status(400).json({ error: "Missing field context" });
+    }
 
     /* -------- start -------- */
     if (step === "start" && existingValue) {
@@ -195,12 +231,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
-      const proposal = await proposeImproved(field, existingValue, undefined, mustInclude);
+      const proposal = await proposeImproved(
+        field,
+        existingValue,
+        undefined,
+        mustInclude
+      );
 
       return res.json({
         ok: true,
         ui: [
-          { role: "assistant", text: `Här är ett förbättrat förslag:\n\n${proposal}` },
+          { role: "assistant", text: `Här är ett förslag:\n\n${proposal}` },
           {
             role: "assistant",
             buttons: [
@@ -216,12 +257,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     /* -------- ask_clarifying -------- */
     if (step === "ask_clarifying") {
-      const proposal = await proposeImproved(field, existingValue, input, mustInclude);
+      const proposal = await proposeImproved(
+        field,
+        existingValue,
+        input,
+        mustInclude
+      );
 
       return res.json({
         ok: true,
         ui: [
-          { role: "assistant", text: `Tack! Här är ett första förslag:\n\n${proposal}` },
+          { role: "assistant", text: `Här är ett första förslag:\n\n${proposal}` },
           {
             role: "assistant",
             buttons: [
@@ -237,9 +283,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     /* -------- refine -------- */
     if (step === "refine") {
+      const base = state.last_proposal || existingValue;
+
       const proposal = await proposeImproved(
         field,
-        state.last_proposal || existingValue,
+        base,
         input,
         mustInclude
       );
