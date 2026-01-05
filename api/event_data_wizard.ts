@@ -5,12 +5,7 @@ const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /* ---------------- Types ---------------- */
 
-type Step =
-  | "start"
-  | "clarify"
-  | "propose"
-  | "refine"
-  | "finalize";
+type Step = "start" | "clarify" | "propose" | "refine" | "finalize";
 
 type EventField =
   | "subtitle"
@@ -41,9 +36,9 @@ type EventWizardBody = {
 function fieldInstruction(field: EventField): string {
   return {
     subtitle:
-      subtitle: "Skapa en kort underrubrik i form av en sammanhängande mening på max 6 ord. Undvik skiljetecken (t.ex. kolon, tankstreck, semikolon). Använd inledande versal i meningen samt versaler på egennamn. Fokus: eventets tema eller huvudfråga.",
+      "Skapa en kort underrubrik i form av en sammanhängande mening på max 6 ord. Undvik skiljetecken (t.ex. kolon, tankstreck, semikolon). Använd inledande versal i meningen samt versaler på egennamn. Fokus: eventets tema eller huvudfråga.",
     target_group:
-      target_group: "Sammanfatta målgruppen i en löpande text, max 50 ord, utifrån tre nivåer av deltagare (obligatoriska, gärna, i mån av plats). Undvik att ta med eventets syfte, tema, namn eller andra metadata. Fokus ska enbart ligga på vem målgruppen är.",
+      "Sammanfatta målgruppen i en löpande text, max 50 ord, utifrån tre nivåer av deltagare (obligatoriska, gärna, i mån av plats). Undvik att ta med eventets syfte, tema, namn eller andra metadata. Fokus ska enbart ligga på vem målgruppen är.",
     previous_feedback:
       "Sammanfatta relevant tidigare feedback, max 50 ord.",
     purpose:
@@ -57,35 +52,24 @@ function fieldInstruction(field: EventField): string {
   }[field];
 }
 
-/* ---------------- GPT: subtitle proposals ---------------- */
+/* ---------------- GPT: propose target group ---------------- */
 
-async function proposeMultipleSubtitles(
-  themeInput: string,
-  eventName?: string
-): Promise<string[]> {
+async function proposeTargetGroup(input: string): Promise<string> {
   const system = `
 Du är Ollo.
 
-Skapa MAX 3 alternativa underrubriker för ett event.
+Skapa en målgruppsbeskrivning för ett event.
 
-KRAV:
-- Max 8 ord per underrubrik
-- Upprepa inte eventnamnet
-- Ingen punkt i slutet
-- Varje förslag ska kunna stå ensamt
-- Undvik marknadsfloskler
+FÖLJ DESSA PRINCIPER:
+- Max 50 ord
+- Använd löpande text
+- Utgå från tre nivåer: obligatoriska, gärna, i mån av plats
+- Beskriv endast målgruppens roller och typ – inte syfte eller tema
+- Utelämna alla referenser till eventets namn, underrubrik eller innehåll
 
-Eventnamn (endast som kontext, ska inte upprepas):
-${eventName ?? ""}
+Svara ENDAST med den färdiga beskrivningen.`;
 
-Svara ENDAST som JSON-array:
-["förslag 1", "förslag 2", "förslag 3"]
-`;
-
-  const user = `
-Tema, fokus eller riktning för eventet:
-${themeInput}
-`;
+  const user = `Beskrivning eller anteckningar om önskad målgrupp:\n${input}`;
 
   const rsp = await client.chat.completions.create({
     model: "gpt-4o",
@@ -94,46 +78,6 @@ ${themeInput}
       { role: "user", content: user }
     ],
     temperature: 0.4
-  });
-
-  return JSON.parse(rsp.choices[0].message.content || "[]");
-}
-
-/* ---------------- GPT: refine ---------------- */
-
-async function refineSubtitle(
-  base: string,
-  adjustment: string
-): Promise<string> {
-  const system = `
-Du är Ollo.
-
-Justera underrubriken nedan enligt användarens instruktion.
-
-REGLER:
-- Max 8 ord
-- Upprepa inte eventnamn
-- Endast inledande versal i första ordet
-- Ingen punkt i slutet
-
-Svara ENDAST med den färdiga underrubriken.
-`;
-
-  const user = `
-NUVARANDE UNDERRUBRIK:
-${base}
-
-ANVÄNDARENS JUSTERING:
-${adjustment}
-`;
-
-  const rsp = await client.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user }
-    ],
-    temperature: 0.3
   });
 
   return rsp.choices[0].message.content?.trim() || "";
@@ -159,16 +103,15 @@ export default async function handler(
       return res.status(400).json({ error: "Missing field" });
     }
 
-    /* -------- start -------- */
-    if (step === "start" && field === "subtitle") {
+    /* -------- start: target_group -------- */
+    if (step === "start" && field === "target_group") {
       return res.json({
         ok: true,
         ui: [
           {
             role: "assistant",
             text:
-              "Kommer detta event att ha ett speciellt tema, fokus eller liknande?\n\n" +
-              "Finns det någon fråga, trend, utmaning eller möjlighet som får större utrymme i programmet?",
+              "Beskriv vem eventet riktar sig till – gärna i nivåer (obligatoriska, gärna, i mån av plats)."
           }
         ],
         next_step: "clarify",
@@ -176,43 +119,34 @@ export default async function handler(
       });
     }
 
-    /* -------- clarify -> propose -------- */
-    if (step === "clarify" && field === "subtitle") {
-      const proposals = await proposeMultipleSubtitles(
-        input || "",
-        context.event_name
-      );
+    /* -------- clarify -> propose: target_group -------- */
+    if (step === "clarify" && field === "target_group") {
+      const proposal = await proposeTargetGroup(input || "");
 
       return res.json({
         ok: true,
         ui: [
           {
             role: "assistant",
-            text: "Här är tre förslag på underrubrik:",
-            options: proposals.map((p, index) => ({
-              id: index,
-              text: p,
-              actions: [
-                { text: "Välj", action: "finalize", value: p },
-                { text: "Redigera", action: "refine", value: p }
-              ]
-            }))
+            text: "Här är ett förslag på målgruppsbeskrivning:",
+            value: proposal,
+            actions: [
+              { text: "Spara", action: "finalize", value: proposal },
+              { text: "Justera", action: "refine", value: proposal }
+            ]
           }
         ],
         next_step: "propose",
         state: {
           ...state,
-          proposals
+          last_proposal: proposal
         }
       });
     }
 
-    /* -------- refine -------- */
-    if (step === "refine" && field === "subtitle") {
-      const refined = await refineSubtitle(
-        state.last_proposal || "",
-        input || ""
-      );
+    /* -------- refine: target_group -------- */
+    if (step === "refine" && field === "target_group") {
+      const refined = await proposeTargetGroup(input || "");
 
       return res.json({
         ok: true,
