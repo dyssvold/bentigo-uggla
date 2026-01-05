@@ -59,6 +59,34 @@ async function proposeTargetGroup(input: string): Promise<string> {
 Du är Ollo.
 
 Skapa en målgruppsbeskrivning för ett event.
+DETTA STEG ÄR EN SAMMANFATTNING – INTE EN TOLKNING.
+
+Uppgiften är att:
+- Slå samman innehållet från tre användarinmatningar
+- Skriva om dem till en sammanhängande löpande text
+- Vid behov korta ned språkligt
+
+Uppgiften är INTE att:
+- Tolka intressen, drivkrafter eller fokus
+- Dra slutsatser
+- Lägga till teman, framtidsbilder eller kontext
+- Anta varför målgruppen deltar
+
+Tillåtet innehåll:
+- Roller (t.ex. tjänstepersoner, förtroendevalda)
+- Organisationstyper (t.ex. kommuner, regioner, bolag)
+- Branscher eller sakområden OM de uttryckligen nämnts av användaren
+
+Otillåtet innehåll:
+- Trender
+- Samhällsutmaningar
+- Klimat, framtid, utveckling (om ej explicit skrivet)
+- Motiv till deltagande
+
+ABSOLUTA REGLER:
+- Lägg inte till något som inte uttryckligen finns i användarens tre texter
+- Använd inga ord som "intresse för", "fokus på", "med särskilt intresse för"
+- Om information saknas: utelämna den
 
 FÖLJ DESSA PRINCIPER:
 - Max 50 ord
