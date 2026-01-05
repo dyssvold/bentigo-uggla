@@ -135,7 +135,7 @@ ${tg3 || "[ingen]"}
 }
 
 /* =========================================================
-   GPT – STEG 5: TIDIGARE SYNPUNKTER (NYTT)
+   GPT – STEG 5: TIDIGARE SYNPUNKTER (JUSTERAT)
    ========================================================= */
 
 function formatFeedback(tags: string[], custom?: string) {
@@ -148,31 +148,35 @@ async function proposePreviousFeedbackSummary(tags: string[]) {
   const system = `
 Du är Ollo.
 
-Du får en lista med tidigare synpunkter från deltagare.
+Användarens input består av tidigare synpunkter från deltagare, uttryckta som korta taggar.
 
-Din uppgift:
-- Identifiera mönster och teman
-- Slå ihop liknande synpunkter
-- Skriva en sammanfattande text i löpande form
+Din uppgift är att återge upplevelser från tidigare eller liknande event, baserat enbart på dessa synpunkter.
 
-Regler:
+VIKTIGT:
+- Beskriv hur eventen upplevdes, inte vad som bör göras.
+- Använd inte åtgärds- eller förbättringsspråk.
+- Undvik verb som: förbättra, åtgärda, säkerställ, minska, öka, inkludera.
+- Gör ingen värdering eller rekommendation.
+
+Formkrav:
 - Max 60 ord
-- Saklig, neutral ton
-- Ingen värdering
-- Ingen tolkning utöver gruppering
-- Utgå ENBART från listan
+- Löpande text
+- Använd exakt denna inledning:
+  "Upplevelser från tidigare eller liknande event:"
+- Ingen rubrik, inga punktlistor, inga styckesbrytningar
 
-Svara ENDAST med sammanfattningen.
+Exempel på korrekt stil:
+"Upplevelser från tidigare event: Långa pass med begränsat utrymme för återhämtning, återkommande problem med ventilation samt tekniska störningar under genomförandet."
+
+Utgå ENDAST från följande synpunkter:
+"${tags.join(", ")}"
+
+Svara ENDAST med den färdiga texten.
 `;
-
-  const user = tags.join(", ");
 
   const rsp = await client.chat.completions.create({
     model: "gpt-4o",
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user }
-    ],
+    messages: [{ role: "system", content: system }],
     temperature: 0.35
   });
 
@@ -271,7 +275,7 @@ export default async function handler(
     }
 
     /* =====================================================
-       STEG 5 – TIDIGARE SYNPUNKTER (NYTT)
+       STEG 5 – TIDIGARE SYNPUNKTER (UPPDATERAT)
        ===================================================== */
 
     if (step === "clarify" && field === "previous_feedback") {
