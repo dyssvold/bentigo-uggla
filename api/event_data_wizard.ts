@@ -3,6 +3,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+/* ---------------- Types ---------------- */
 type Step = "start" | "clarify" | "propose" | "refine" | "finalize";
 
 type EventField =
@@ -32,29 +33,20 @@ type EventWizardBody = {
   };
 };
 
-function fieldInstruction(field: EventField): string {
-  return {
-    subtitle:
-      "Skapa en kort underrubrik i form av en sammanhängande mening på max 6 ord. Undvik skiljetecken (t.ex. kolon, tankstreck, semikolon). Använd inledande versal i meningen samt versaler på egennamn. Fokus: eventets tema eller huvudfråga.",
-    target_group:
-      "Sammanfatta målgruppen i en löpande text, max 50 ord, utifrån tre nivåer av deltagare (obligatoriska, gärna, i mån av plats). Undvik att ta med eventets syfte, tema, namn eller andra metadata. Fokus ska enbart ligga på vem målgruppen är.",
-    previous_feedback:
-      "Sammanfatta relevant tidigare feedback, max 50 ord.",
-    purpose:
-      "Skapa en syftesbeskrivning, max 50 ord.",
-    audience_profile:
-      "Skapa en deltagarbeskrivning, max 60 ord.",
-    program_notes:
-      "Skapa en objektiv eventbeskrivning, max 60 ord.",
-    public_description:
-      "Skapa en säljande publik text, max 80 ord.",
-  }[field];
+/* ---------------- Helpers ---------------- */
+function hasRequiredStructure(text: string): boolean {
+  return (
+    text.includes("Primär målgrupp är") ||
+    text.includes("Sekundär målgrupp är") ||
+    text.includes("är också välkomna att delta i mån av plats")
+  );
 }
 
 async function proposeTargetGroupFromLevels(
   tg1: string = "",
   tg2: string = "",
-  tg3: string = ""
+  tg3: string = "",
+  correction_note: string = ""
 ): Promise<string> {
   const system = `
 Du är Ollo.
@@ -69,11 +61,25 @@ Användarens input är redan korrekt formulerad. Du ska INTE tolka, lägga till 
 
 Följ dessa regler:
 - Sammanfatta i löpande text, max 50 ord.
-- Använd följande formulering: "Primär målgrupp är [...], sekundär är [...]. [...] är också välkomna att delta i mån av plats."
 - Gör inga tillägg om motiv, teman, klimat, framtid eller syfte.
 - Utelämna eventnamn eller annan metadata.
 - Gör ingen tolkning – enbart omskrivning och kondensering.
 - Om någon nivå är tom, utelämna meningen.
+
+DU MÅSTE använda exakt följande struktur:
+
+Primär målgrupp är [text från nivå 1].
+Sekundär målgrupp är [text från nivå 2].
+[text från nivå 3] är också välkomna att delta i mån av plats.
+
+- Om en nivå saknas: utelämna hela meningen.
+- Ändra inte ordningen.
+- Lägg inte till egna formuleringar.
+
+ABSOLUT FÖRBUD:
+- Börja ALDRIG texten med "Eventet", "Eventet riktar sig", "Målgruppen är".
+
+${correction_note}
 
 Svara ENDAST med texten. Inga rubriker eller förklaringar.`;
 
@@ -100,6 +106,7 @@ ${tg3 || "[ingen]"}
   return rsp.choices[0].message.content?.trim() || "";
 }
 
+/* ---------------- Handler ---------------- */
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse
@@ -132,12 +139,31 @@ export default async function handler(
       });
     }
 
+    if (
+      step === "clarify" &&
+      field === "target_group" &&
+      !target_group_1 &&
+      !target_group_2 &&
+      !target_group_3
+    ) {
+      return res.status(400).json({ error: "Du måste fylla i minst en målgruppsnivå." });
+    }
+
     if (step === "clarify" && field === "target_group") {
-      const proposal = await proposeTargetGroupFromLevels(
+      let proposal = await proposeTargetGroupFromLevels(
         target_group_1,
         target_group_2,
         target_group_3
       );
+
+      if (!hasRequiredStructure(proposal)) {
+        proposal = await proposeTargetGroupFromLevels(
+          target_group_1,
+          target_group_2,
+          target_group_3,
+          "DU FÖLJDE INTE STRUKTUREN. ANVÄND EXAKT MALLEN."
+        );
+      }
 
       return res.json({
         ok: true,
@@ -163,11 +189,20 @@ export default async function handler(
     }
 
     if (step === "refine" && field === "target_group") {
-      const refined = await proposeTargetGroupFromLevels(
+      let refined = await proposeTargetGroupFromLevels(
         target_group_1,
         target_group_2,
         target_group_3
       );
+
+      if (!hasRequiredStructure(refined)) {
+        refined = await proposeTargetGroupFromLevels(
+          target_group_1,
+          target_group_2,
+          target_group_3,
+          "DU FÖLJDE INTE STRUKTUREN. ANVÄND EXAKT MALLEN."
+        );
+      }
 
       return res.json({
         ok: true,
