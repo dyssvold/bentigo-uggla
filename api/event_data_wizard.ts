@@ -20,12 +20,19 @@ type EventWizardBody = {
   input?: string;
   state?: {
     field: EventField;
+
+    /* gemensamt */
     existing_value?: string;
     last_proposal?: string;
-    proposals?: string[];
+
+    /* steg 4 – målgrupp */
     target_group_1?: string;
     target_group_2?: string;
     target_group_3?: string;
+
+    /* steg 5 – tidigare synpunkter */
+    feedback_tags?: string[];
+    feedback_custom?: string;
   };
   context?: {
     field: EventField;
@@ -34,6 +41,7 @@ type EventWizardBody = {
 };
 
 /* ---------------- Helpers ---------------- */
+
 function hasRequiredStructure(text: string): boolean {
   return (
     text.includes("Primär målgrupp är") ||
@@ -42,92 +50,77 @@ function hasRequiredStructure(text: string): boolean {
   );
 }
 
-function fieldInstruction(field: EventField): string {
-  return {
-    subtitle:
-      "Skapa en kort underrubrik i form av en sammanhängande mening på max 6 ord. Undvik skiljetecken (t.ex. kolon, tankstreck, semikolon). Använd inledande versal i meningen samt versaler på egennamn. Fokus: eventets tema eller huvudfråga.",
-    target_group:
-      "Sammanfatta målgruppen i en löpande text, max 50 ord, utifrån tre nivåer av deltagare (obligatoriska, gärna, i mån av plats). Undvik att ta med eventets syfte, tema, namn eller andra metadata. Fokus ska enbart ligga på vem målgruppen är.",
-    previous_feedback:
-      "Sammanfatta relevant tidigare feedback, max 50 ord.",
-    purpose:
-      "Skapa en syftesbeskrivning, max 50 ord.",
-    audience_profile:
-      "Skapa en deltagarbeskrivning, max 60 ord.",
-    program_notes:
-      "Skapa en objektiv eventbeskrivning, max 60 ord.",
-    public_description:
-      "Skapa en säljande publik text, max 80 ord."
-  }[field];
-}
+/* =========================================================
+   GPT – STEG 3: UNDERRUBRIK (ORÖRT)
+   ========================================================= */
 
-/* ---------------- GPT: propose subtitle ---------------- */
 async function proposeSubtitle(input: string): Promise<string> {
-  const system = `Du är Ollo. Skapa en underrubrik på max 6 ord, i form av en sammanhängande mening utan skiljetecken. Använd inledande versal och versaler på egennamn. Fokus: eventets tema eller huvudfråga.`;
-  const user = `Beskrivning eller anteckningar:
-${input}`;
+  const system = `
+Du är Ollo.
+
+Skapa en underrubrik:
+- Max 6 ord
+- Sammanhängande mening
+- Inga skiljetecken (kolon, tankstreck, semikolon)
+- Inledande versal
+- Versal på egennamn
+
+Svara endast med underrubriken.
+`;
+
   const rsp = await client.chat.completions.create({
     model: "gpt-4o",
     messages: [
       { role: "system", content: system },
-      { role: "user", content: user }
+      { role: "user", content: input }
     ],
     temperature: 0.3
   });
+
   return rsp.choices[0].message.content?.trim() || "";
 }
 
-/* ---------------- GPT: propose target group ---------------- */
+/* =========================================================
+   GPT – STEG 4: MÅLGRUPPSBESKRIVNING (ORÖRT)
+   ========================================================= */
+
 async function proposeTargetGroupFromLevels(
-  tg1: string = "",
-  tg2: string = "",
-  tg3: string = "",
-  correction_note: string = ""
+  tg1 = "",
+  tg2 = "",
+  tg3 = "",
+  correction_note = ""
 ): Promise<string> {
   const system = `
 Du är Ollo.
 
-Du ska skapa en målgruppsbeskrivning för ett event, utifrån tre nivåer av deltagare:
+Du ska skapa en målgruppsbeskrivning enligt EXAKT denna mall:
 
-- Nivå 1: Primär målgrupp
-- Nivå 2: Sekundär målgrupp
-- Nivå 3: Övriga deltagare
+Primär målgrupp är [nivå 1].
+Sekundär målgrupp är [nivå 2].
+[nivå 3] är också välkomna att delta i mån av plats.
 
-Användarens input är redan korrekt formulerad. Du ska INTE tolka, lägga till eller ändra något.
-
-Följ dessa regler:
-- Sammanfatta i löpande text, max 50 ord.
-- Gör inga tillägg om motiv, teman, klimat, framtid eller syfte.
-- Utelämna eventnamn eller annan metadata.
-- Gör ingen tolkning – enbart omskrivning och kondensering.
-- Om någon nivå är tom, utelämna meningen.
-
-DU MÅSTE använda exakt följande struktur:
-
-Primär målgrupp är [text från nivå 1].
-Sekundär målgrupp är [text från nivå 2].
-[text från nivå 3] är också välkomna att delta i mån av plats.
-
-- Om en nivå saknas: utelämna hela meningen.
-- Ändra inte ordningen.
-- Lägg inte till egna formuleringar.
-
-ABSOLUT FÖRBUD:
-- Börja ALDRIG texten med "Eventet", "Eventet riktar sig", "Målgruppen är".
+Regler:
+- Max 50 ord totalt
+- Gör inga tolkningar
+- Lägg inte till motiv, teman eller syfte
+- Utelämna mening om nivå saknas
+- Börja ALDRIG med "Eventet" eller "Målgruppen är"
 
 ${correction_note}
 
-Svara ENDAST med texten. Inga rubriker eller förklaringar.`;
+Svara ENDAST med texten.
+`;
 
   const user = `
-Nivå 1 – Primär målgrupp:
+Nivå 1:
 ${tg1 || "[ingen]"}
 
-Nivå 2 – Sekundär målgrupp:
+Nivå 2:
 ${tg2 || "[ingen]"}
 
-Nivå 3 – Övriga deltagare:
-${tg3 || "[ingen]"}`;
+Nivå 3:
+${tg3 || "[ingen]"}
+`;
 
   const rsp = await client.chat.completions.create({
     model: "gpt-4o",
@@ -141,7 +134,55 @@ ${tg3 || "[ingen]"}`;
   return rsp.choices[0].message.content?.trim() || "";
 }
 
-/* ---------------- Handler ---------------- */
+/* =========================================================
+   GPT – STEG 5: TIDIGARE SYNPUNKTER (NYTT)
+   ========================================================= */
+
+function formatFeedback(tags: string[], custom?: string) {
+  const all = [...tags];
+  if (custom?.trim()) all.push(custom.trim());
+  return all;
+}
+
+async function proposePreviousFeedbackSummary(tags: string[]) {
+  const system = `
+Du är Ollo.
+
+Du får en lista med tidigare synpunkter från deltagare.
+
+Din uppgift:
+- Identifiera mönster och teman
+- Slå ihop liknande synpunkter
+- Skriva en sammanfattande text i löpande form
+
+Regler:
+- Max 60 ord
+- Saklig, neutral ton
+- Ingen värdering
+- Ingen tolkning utöver gruppering
+- Utgå ENBART från listan
+
+Svara ENDAST med sammanfattningen.
+`;
+
+  const user = tags.join(", ");
+
+  const rsp = await client.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user }
+    ],
+    temperature: 0.35
+  });
+
+  return rsp.choices[0].message.content?.trim() || "";
+}
+
+/* =========================================================
+   HANDLER
+   ========================================================= */
+
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse
@@ -153,171 +194,130 @@ export default async function handler(
 
   try {
     const body = req.body as EventWizardBody;
-    const { step, input, state = {}, context = {} } = body;
-    const { field, target_group_1, target_group_2, target_group_3 } = state;
+    const { step, input, state = {} } = body;
+    const { field } = state;
 
-    if (!field) {
-      return res.status(400).json({ error: "Missing field" });
-    }
+    if (!field) return res.status(400).json({ error: "Missing field" });
 
-    /* -------- start: subtitle -------- */
+    /* =====================================================
+       STEG 3 – UNDERRUBRIK
+       ===================================================== */
+
     if (step === "start" && field === "subtitle") {
       return res.json({
         ok: true,
-        ui: [
-          {
-            role: "assistant",
-            text: fieldInstruction(field)
-          }
-        ],
+        ui: [{ role: "assistant", text: "Beskriv eventets fokus eller huvudfråga." }],
         next_step: "clarify",
         state: { field }
       });
     }
 
-    /* -------- clarify -> propose: subtitle -------- */
     if (step === "clarify" && field === "subtitle") {
       const proposal = await proposeSubtitle(input || "");
       return res.json({
         ok: true,
-        ui: [
-          {
-            role: "assistant",
-            text: "Här är ett förslag på underrubrik:",
-            value: proposal,
-            actions: [
-              { text: "Använd denna", action: "finalize", value: proposal },
-              { text: "Justera", action: "refine", value: proposal },
-              { text: "Nytt förslag", action: "refine" },
-              { text: "Redigera", action: "edit" }
-            ]
-          }
-        ],
+        ui: [{
+          role: "assistant",
+          text: "Förslag på underrubrik:",
+          value: proposal,
+          actions: [
+            { text: "Använd denna", action: "finalize", value: proposal },
+            { text: "Justera", action: "refine" },
+            { text: "Nytt förslag", action: "refine" },
+            { text: "Redigera", action: "edit" }
+          ]
+        }],
         next_step: "propose",
-        state: {
-          ...state,
-          last_proposal: proposal
-        }
+        state: { ...state, last_proposal: proposal }
       });
     }
 
-    /* -------- start: target_group -------- */
-    if (step === "start" && field === "target_group") {
-      return res.json({
-        ok: true,
-        ui: [
-          {
-            role: "assistant",
-            text: "Vem riktar sig eventet till? Ange tre nivåer: obligatoriska, gärna, i mån av plats."
-          }
-        ],
-        next_step: "clarify",
-        state: { field }
-      });
-    }
-
-    /* -------- clarify -> propose: target_group -------- */
-    if (
-      step === "clarify" &&
-      field === "target_group" &&
-      !target_group_1 &&
-      !target_group_2 &&
-      !target_group_3
-    ) {
-      return res.status(400).json({ error: "Du måste fylla i minst en målgruppsnivå." });
-    }
+    /* =====================================================
+       STEG 4 – MÅLGRUPP
+       ===================================================== */
 
     if (step === "clarify" && field === "target_group") {
       let proposal = await proposeTargetGroupFromLevels(
-        target_group_1,
-        target_group_2,
-        target_group_3
+        state.target_group_1,
+        state.target_group_2,
+        state.target_group_3
       );
 
       if (!hasRequiredStructure(proposal)) {
         proposal = await proposeTargetGroupFromLevels(
-          target_group_1,
-          target_group_2,
-          target_group_3,
-          "DU FÖLJDE INTE STRUKTUREN. ANVÄND EXAKT MALLEN."
+          state.target_group_1,
+          state.target_group_2,
+          state.target_group_3,
+          "DU FÖLJDE INTE STRUKTUREN."
         );
       }
 
       return res.json({
         ok: true,
-        ui: [
-          {
-            role: "assistant",
-            text: "Förslag på målgruppsbeskrivning:",
-            value: proposal,
-            actions: [
-              { text: "Använd denna", action: "finalize", value: proposal },
-              { text: "Justera", action: "refine", value: proposal },
-              { text: "Nytt förslag", action: "refine" },
-              { text: "Redigera", action: "edit" }
-            ]
-          }
-        ],
+        ui: [{
+          role: "assistant",
+          text: "Förslag på målgruppsbeskrivning:",
+          value: proposal,
+          actions: [
+            { text: "Använd denna", action: "finalize", value: proposal },
+            { text: "Justera", action: "refine" },
+            { text: "Nytt förslag", action: "refine" },
+            { text: "Redigera", action: "edit" }
+          ]
+        }],
         next_step: "propose",
-        state: {
-          ...state,
-          last_proposal: proposal
-        }
+        state: { ...state, last_proposal: proposal }
       });
     }
 
-    if (step === "refine" && field === "target_group") {
-      let refined = await proposeTargetGroupFromLevels(
-        target_group_1,
-        target_group_2,
-        target_group_3
+    /* =====================================================
+       STEG 5 – TIDIGARE SYNPUNKTER (NYTT)
+       ===================================================== */
+
+    if (step === "clarify" && field === "previous_feedback") {
+      const tags = formatFeedback(
+        state.feedback_tags || [],
+        state.feedback_custom
       );
 
-      if (!hasRequiredStructure(refined)) {
-        refined = await proposeTargetGroupFromLevels(
-          target_group_1,
-          target_group_2,
-          target_group_3,
-          "DU FÖLJDE INTE STRUKTUREN. ANVÄND EXAKT MALLEN."
-        );
-      }
+      const summary = await proposePreviousFeedbackSummary(tags);
 
       return res.json({
         ok: true,
-        ui: [
-          {
-            role: "assistant",
-            text: "Uppdaterat förslag:",
-            value: refined,
-            actions: [
-              { text: "Använd denna", action: "finalize", value: refined },
-              { text: "Justera mer", action: "refine" }
-            ]
-          }
-        ],
-        next_step: "refine",
-        state: {
-          ...state,
-          last_proposal: refined
-        }
+        ui: [{
+          role: "assistant",
+          text: "Förslag på summering av tidigare synpunkter:",
+          value: summary,
+          actions: [
+            { text: "Använd denna", action: "finalize", value: summary },
+            { text: "Justera", action: "refine" },
+            { text: "Nytt förslag", action: "refine" },
+            { text: "Redigera", action: "edit" }
+          ]
+        }],
+        next_step: "propose",
+        state: { ...state, last_proposal: summary }
       });
     }
+
+    /* =====================================================
+       FINALIZE (gemensam)
+       ===================================================== */
 
     if (step === "finalize") {
       return res.json({
         ok: true,
-        actions: [
-          {
-            type: "save_event_field",
-            field,
-            value: input || state.last_proposal
-          }
-        ],
+        actions: [{
+          type: "save_event_field",
+          field,
+          value: input || state.last_proposal
+        }],
         next_step: "done"
       });
     }
 
     return res.status(400).json({ error: "Invalid step" });
+
   } catch (err: any) {
     console.error(err);
     return res.status(500).json({ error: err.message });
