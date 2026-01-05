@@ -41,7 +41,7 @@ type EventWizardBody = {
 function fieldInstruction(field: EventField): string {
   return {
     subtitle:
-      "Skapa en kort underrubrik eller tagline, max 8 ord. Upprepa inte eventnamnet.",
+      subtitle: "Skapa en kort underrubrik i form av en sammanhängande mening på max 6 ord. Undvik skiljetecken (t.ex. kolon, tankstreck, semikolon). Använd inledande versal i meningen samt versaler på egennamn. Fokus: eventets tema eller huvudfråga.",
     target_group:
       "Sammanfatta målgruppen i löpande text, max 50 ord.",
     previous_feedback:
