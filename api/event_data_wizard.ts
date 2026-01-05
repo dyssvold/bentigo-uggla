@@ -135,7 +135,7 @@ ${tg3 || "[ingen]"}
 }
 
 /* =========================================================
-   GPT – STEG 5: TIDIGARE SYNPUNKTER (JUSTERAT)
+   GPT – STEG 5: TIDIGARE SYNPUNKTER (FÖRBÄTTRAT)
    ========================================================= */
 
 function formatFeedback(tags: string[], custom?: string) {
@@ -144,29 +144,42 @@ function formatFeedback(tags: string[], custom?: string) {
   return all;
 }
 
-async function proposePreviousFeedbackSummary(tags: string[]) {
+function hasValidPreviousFeedbackStyle(text: string): boolean {
+  const forbidden = /\b(förbättra|planera|säkerställ|öka|minska|inkludera|åtgärda)\b/i;
+  return (
+    text.startsWith("Upplevelser från tidigare eller liknande event:") &&
+    !forbidden.test(text)
+  );
+}
+
+async function proposePreviousFeedbackSummary(
+  tags: string[],
+  correctionNote: string = ""
+) {
   const system = `
 Du är Ollo.
 
-Användarens input består av tidigare synpunkter från deltagare, uttryckta som korta taggar.
+Din uppgift är att beskriva upplevelser från tidigare eller liknande event,
+baserat ENBART på användarens synpunkter.
 
-Din uppgift är att återge upplevelser från tidigare eller liknande event, baserat enbart på dessa synpunkter.
+SPRÅKLIGA KRAV:
+- Beskriv hur eventen upplevdes
+- Använd observerande, beskrivande språk
+- Använd inte förbättrings- eller åtgärdsspråk
+- Inga rekommendationer, inga slutsatser
 
-VIKTIGT:
-- Beskriv hur eventen upplevdes, inte vad som bör göras.
-- Använd inte åtgärds- eller förbättringsspråk.
-- Undvik verb som: förbättra, åtgärda, säkerställ, minska, öka, inkludera.
-- Gör ingen värdering eller rekommendation.
+ABSOLUT FÖRBUD:
+- Ord som: förbättra, planera, säkerställ, öka, minska, åtgärda
+- Orsak–verkan-formuleringar
+- Värderande språk
 
-Formkrav:
+FORM:
 - Max 60 ord
 - Löpande text
-- Använd exakt denna inledning:
+- Exakt denna inledning:
   "Upplevelser från tidigare eller liknande event:"
-- Ingen rubrik, inga punktlistor, inga styckesbrytningar
 
-Exempel på korrekt stil:
-"Upplevelser från tidigare event: Långa pass med begränsat utrymme för återhämtning, återkommande problem med ventilation samt tekniska störningar under genomförandet."
+${correctionNote}
 
 Utgå ENDAST från följande synpunkter:
 "${tags.join(", ")}"
@@ -177,7 +190,7 @@ Svara ENDAST med den färdiga texten.
   const rsp = await client.chat.completions.create({
     model: "gpt-4o",
     messages: [{ role: "system", content: system }],
-    temperature: 0.35
+    temperature: 0.25
   });
 
   return rsp.choices[0].message.content?.trim() || "";
@@ -275,7 +288,7 @@ export default async function handler(
     }
 
     /* =====================================================
-       STEG 5 – TIDIGARE SYNPUNKTER (UPPDATERAT)
+       STEG 5 – TIDIGARE SYNPUNKTER (FÖRBÄTTRAT)
        ===================================================== */
 
     if (step === "clarify" && field === "previous_feedback") {
@@ -284,7 +297,14 @@ export default async function handler(
         state.feedback_custom
       );
 
-      const summary = await proposePreviousFeedbackSummary(tags);
+      let summary = await proposePreviousFeedbackSummary(tags);
+
+      if (!hasValidPreviousFeedbackStyle(summary)) {
+        summary = await proposePreviousFeedbackSummary(
+          tags,
+          "DU ANVÄNDE ÅTGÄRDSSPRÅK ELLER FEL TON. BESKRIV ENDAST UPPLEVELSER."
+        );
+      }
 
       return res.json({
         ok: true,
