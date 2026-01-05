@@ -43,7 +43,7 @@ function fieldInstruction(field: EventField): string {
     subtitle:
       subtitle: "Skapa en kort underrubrik i form av en sammanhängande mening på max 6 ord. Undvik skiljetecken (t.ex. kolon, tankstreck, semikolon). Använd inledande versal i meningen samt versaler på egennamn. Fokus: eventets tema eller huvudfråga.",
     target_group:
-      "Sammanfatta målgruppen i löpande text, max 50 ord.",
+      target_group: "Sammanfatta målgruppen i en löpande text, max 50 ord, utifrån tre nivåer av deltagare (obligatoriska, gärna, i mån av plats). Undvik att ta med eventets syfte, tema, namn eller andra metadata. Fokus ska enbart ligga på vem målgruppen är.",
     previous_feedback:
       "Sammanfatta relevant tidigare feedback, max 50 ord.",
     purpose:
