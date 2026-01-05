@@ -42,6 +42,42 @@ function hasRequiredStructure(text: string): boolean {
   );
 }
 
+function fieldInstruction(field: EventField): string {
+  return {
+    subtitle:
+      "Skapa en kort underrubrik i form av en sammanhängande mening på max 6 ord. Undvik skiljetecken (t.ex. kolon, tankstreck, semikolon). Använd inledande versal i meningen samt versaler på egennamn. Fokus: eventets tema eller huvudfråga.",
+    target_group:
+      "Sammanfatta målgruppen i en löpande text, max 50 ord, utifrån tre nivåer av deltagare (obligatoriska, gärna, i mån av plats). Undvik att ta med eventets syfte, tema, namn eller andra metadata. Fokus ska enbart ligga på vem målgruppen är.",
+    previous_feedback:
+      "Sammanfatta relevant tidigare feedback, max 50 ord.",
+    purpose:
+      "Skapa en syftesbeskrivning, max 50 ord.",
+    audience_profile:
+      "Skapa en deltagarbeskrivning, max 60 ord.",
+    program_notes:
+      "Skapa en objektiv eventbeskrivning, max 60 ord.",
+    public_description:
+      "Skapa en säljande publik text, max 80 ord."
+  }[field];
+}
+
+/* ---------------- GPT: propose subtitle ---------------- */
+async function proposeSubtitle(input: string): Promise<string> {
+  const system = `Du är Ollo. Skapa en underrubrik på max 6 ord, i form av en sammanhängande mening utan skiljetecken. Använd inledande versal och versaler på egennamn. Fokus: eventets tema eller huvudfråga.`;
+  const user = `Beskrivning eller anteckningar:
+${input}`;
+  const rsp = await client.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user }
+    ],
+    temperature: 0.3
+  });
+  return rsp.choices[0].message.content?.trim() || "";
+}
+
+/* ---------------- GPT: propose target group ---------------- */
 async function proposeTargetGroupFromLevels(
   tg1: string = "",
   tg2: string = "",
@@ -91,8 +127,7 @@ Nivå 2 – Sekundär målgrupp:
 ${tg2 || "[ingen]"}
 
 Nivå 3 – Övriga deltagare:
-${tg3 || "[ingen]"}
-`;
+${tg3 || "[ingen]"}`;
 
   const rsp = await client.chat.completions.create({
     model: "gpt-4o",
@@ -125,6 +160,48 @@ export default async function handler(
       return res.status(400).json({ error: "Missing field" });
     }
 
+    /* -------- start: subtitle -------- */
+    if (step === "start" && field === "subtitle") {
+      return res.json({
+        ok: true,
+        ui: [
+          {
+            role: "assistant",
+            text: fieldInstruction(field)
+          }
+        ],
+        next_step: "clarify",
+        state: { field }
+      });
+    }
+
+    /* -------- clarify -> propose: subtitle -------- */
+    if (step === "clarify" && field === "subtitle") {
+      const proposal = await proposeSubtitle(input || "");
+      return res.json({
+        ok: true,
+        ui: [
+          {
+            role: "assistant",
+            text: "Här är ett förslag på underrubrik:",
+            value: proposal,
+            actions: [
+              { text: "Använd denna", action: "finalize", value: proposal },
+              { text: "Justera", action: "refine", value: proposal },
+              { text: "Nytt förslag", action: "refine" },
+              { text: "Redigera", action: "edit" }
+            ]
+          }
+        ],
+        next_step: "propose",
+        state: {
+          ...state,
+          last_proposal: proposal
+        }
+      });
+    }
+
+    /* -------- start: target_group -------- */
     if (step === "start" && field === "target_group") {
       return res.json({
         ok: true,
@@ -139,6 +216,7 @@ export default async function handler(
       });
     }
 
+    /* -------- clarify -> propose: target_group -------- */
     if (
       step === "clarify" &&
       field === "target_group" &&
