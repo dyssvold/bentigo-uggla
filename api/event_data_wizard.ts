@@ -126,17 +126,17 @@ Användarens input består av tidigare synpunkter i form av taggar.
 
 Din uppgift är att sammanfatta hur eventen UPPLEVTS, baserat ENDAST på dessa synpunkter.
 
-📌 SPRÅKLIGA KRAV:
+SPRÅKLIGA KRAV:
 - Beskriv upplevelser, inte åtgärder
 - Använd observerande och återberättande språk
 - Undvik värderingar, slutsatser och förslag
 - Inga orsak–verkan-konstruktioner
 
-🛑 ABSOLUT FÖRBUD:
+ABSOLUT FÖRBUD:
 Ord som: förbättra, planera, säkerställ, öka, minska, inkludera, åtgärda,
 prioritera, optimera, ska, bör, behöver, för att, i syfte att
 
-✏️ STIL OCH FORM:
+STIL OCH FORM:
 - Gör inga omskrivningar eller stilistiska utsmyckningar
 - Sammanfoga närliggande taggar till tematiska beskrivningar
 - Fokusera på att förtydliga, förenkla och gruppera – inte att skriva om
@@ -170,45 +170,41 @@ async function synthesizePurpose(
 Du är Ollo, en svensk eventassistent.
 
 Din uppgift:
-Formulera en kort och tydlig syftesbeskrivning för ett event, baserat på användarens formuleringar.
+Formulera en kort, tydlig och konkret syftesbeskrivning för ett event, baserat på användarens svar på frågorna "varför eventet planeras" och "vilken nytta eller effekt som önskas".
 
-VIKTIG AVGRÄNSNING:
-- Detta är ENDAST en syftesbeskrivning.
-- Du får INTE formulera mål, mätetal, effekter, aktiviteter eller uppföljning.
-- Du får INTE använda punktlistor, rubriker, mellanrubriker eller uppdelningar.
-- Du får INTE använda procentsatser, siffror, tidsangivelser eller kvantifieringar.
+❗ VIKTIGT: Detta är ENDAST en syftesbeskrivning.
+Du får INTE formulera mål, mätetal, effekter, aktiviteter eller uppföljning.
+Du får INTE använda punktlistor, rubriker, mellanrubriker eller uppdelningar.
+Du får INTE använda procentsatser, siffror, tid, mätbarhet eller påstådd effekt.
+Du får INTE förklara varför du skrev som du gjorde.
 
-SPRÅKLIG FORM:
+📐 FORM:
 - Max 50 ord
 - Max 2 meningar
-- Endast löpande text
-- Sammanhållen och lätt att läsa
+- Endast löpande text (ingen rubrik, ingen punktlista)
+- Börja med: "Syftet för detta event är att …"
 
-START:
-- Inled texten med:
-  "Syftet för detta event är att …"
+🚫 FÖRBJUDNA ORD:
+- mål, målsättning, effekt, resultat, säkerställa, öka, förbättra, implementera
+- marknadsföringsspråk
+- abstrakta eller fluffiga formuleringar
+- retoriska överdrifter eller slogans
 
-FÖRBUD (använd inte):
-- “Mål”, “målsättning”, “effekter”, “resultat”, “säkerställa”, “öka”, “förbättra”, “implementera”
-- Marknads- eller konsultspråk
-- Floskler eller abstrakta formuleringar
-- Rubriker eller metakommentarer
-
-TON:
-- Enkel, vardaglig och konkret
+🎯 TON:
+- Enkel, konkret och vardaglig
 - Beskrivande, inte övertygande
 - Hellre saklig än inspirerande
 
-TIDIGARE FEEDBACK:
-- Om feedback finns, använd den endast som kontext.
-- Återge inte problem eller brister.
-- Omvandla den till en neutral intention på syftesnivå.
+💬 FEEDBACK:
+Om tidigare deltagarfeedback finns med, använd den som kontext – inte som klagomål.
+Översätt eventuell återhämtnings- eller logistikrelaterad feedback till en relevant syftesformulering om det passar.
 
 Svara ENDAST med den färdiga syftesbeskrivningen.
+Inga rubriker. Inga förklaringar. Inga citationstecken.
 `;
 
   const user = `VARFÖR: ${why1}
-EFFEKT / NYTTA: ${why2}${feedback ? `\nTIDIGARE FEEDBACK: ${feedback}` : ""}`;
+NYTTA / EFFEKT: ${why2}${feedback ? `\nTIDIGARE FEEDBACK: ${feedback}` : ""}`;
 
   const rsp = await client.chat.completions.create({
     model: "gpt-4o",
@@ -220,6 +216,13 @@ EFFEKT / NYTTA: ${why2}${feedback ? `\nTIDIGARE FEEDBACK: ${feedback}` : ""}`;
   });
 
   return rsp.choices[0].message.content?.trim() || "";
+}
+
+function isPurposeValid(text: string): boolean {
+  const tooLong = text.split(".").length > 3;
+  const hasForbidden =
+    /:|\n\n|\b(mål|mät|%|100|analys|hur|förslag)\b|[-•\d+]\./i.test(text);
+  return !tooLong && !hasForbidden;
 }
 
 /* =========================================================
@@ -339,7 +342,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 /* -------------------- STEP: purpose -------------------- */
 if (step === "clarify" && field === "purpose") {
-  // Steg 1: användaren har inte besvarat någon fråga ännu
+  const feedback = state.previous_feedback || context.previous_feedback || "";
+
+  // Steg 1: varken WHY1 eller WHY2 är ifyllda
   if (!state.purpose_why1 && !state.purpose_why2 && !input) {
     return res.json({
       ok: true,
@@ -348,11 +353,11 @@ if (step === "clarify" && field === "purpose") {
         text: "Börja med att kort beskriva varför det här eventet planeras."
       }],
       next_step: "clarify",
-      state: { ...state }
+      state
     });
   }
 
-  // Steg 2: spara svaret på fråga 1 (VARFÖR), ställ fråga 2 (EFFEKT)
+  // Steg 2: användaren har precis svarat på WHY1
   if (!state.purpose_why1 && input) {
     return res.json({
       ok: true,
@@ -365,23 +370,51 @@ if (step === "clarify" && field === "purpose") {
     });
   }
 
-  // Steg 3: nu borde vi ha både WHY1 och WHY2 – generera syftesförslag
+  // Steg 3: användaren har precis svarat på WHY2 eller båda finns redan
   const why1 = state.purpose_why1 || "";
   const why2 = state.purpose_why2 || input || "";
 
   if (!why2) {
-    return res.status(400).json({ error: "Saknar input till syftesbeskrivningens effekt/nytta" });
+    return res.status(400).json({
+      error: "Saknar input till syftesbeskrivningens effekt/nytta"
+    });
   }
 
-  const feedback = state.previous_feedback || context.previous_feedback || "";
-
   const proposal = await synthesizePurpose(why1, why2, feedback);
+
+  if (!isPurposeValid(proposal)) {
+  const retry = await synthesizePurpose(
+    why1,
+    why2,
+    feedback + "\n\nFÖRRA FÖRSLAGET FÖLJDE INTE INSTRUKTIONERNA. FÖLJ DEM EXAKT."
+  );
 
   return res.json({
     ok: true,
     ui: [{
       role: "assistant",
-      text: "Förslag på syftesbeskrivning:",
+      text: "Första förslaget följde inte instruktionerna. Här är ett nytt:",
+      value: retry,
+      actions: [
+        { text: "Använd denna", action: "finalize", value: retry },
+        { text: "Justera", action: "ask_refinement" },
+        { text: "Nytt förslag", action: "refine" },
+        { text: "Redigera", action: "edit" }
+      ]
+    }],
+    next_step: "propose",
+    state: {
+      ...state,
+      last_proposal: retry
+    }
+  });
+}
+
+  return res.json({
+    ok: true,
+    ui: [{
+      role: "assistant",
+      text: "Här är ett förslag på syftesbeskrivning utifrån det du skrev:",
       value: proposal,
       actions: [
         { text: "Använd denna", action: "finalize", value: proposal },
