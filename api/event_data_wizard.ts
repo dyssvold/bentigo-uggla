@@ -99,7 +99,7 @@ Regler:
 - Max 50 ord totalt
 - Gör inga tolkningar
 - Lägg inte till motiv, teman eller syfte
-– Inled mening med versal, och övriga ord med gemen, om de inte är namn eller begrepp som brukar skrivas med inledande versal
+– Inled mening med stor bokstav, och övriga ord med liten, om de inte är namn eller begrepp som brukar skrivas med inledande stor bokstav
 - Utelämna mening om nivå saknas
 - Börja ALDRIG med "Eventet" eller "Målgruppen är"
 ${correction_note}
