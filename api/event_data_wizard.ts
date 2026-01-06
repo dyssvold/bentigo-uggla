@@ -161,17 +161,37 @@ Svara ENDAST med den färdiga texten.`;
   return rsp.choices[0].message.content?.trim() || "";
 }
 
-async function synthesizePurpose(why1: string, why2: string, feedback: string = ""): Promise<string> {
+async function synthesizePurpose(
+  why1: string,
+  why2: string,
+  feedback: string = ""
+): Promise<string> {
   const system = `Du är Ollo, en svensk eventassistent.
-Förädla WHY1 och WHY2 till en tydlig och inspirerande syftesbeskrivning.
-Fokusera på intention och önskad effekt, inte på aktiviteter.
-1–3 meningar, max 50 ord.
-Enkelt, vardagligt språk.
-Undvik metaforer och fluff.
-Om tidigare års deltagarfeedback finns, väg in den i arbetet.
-Svara ENDAST med själva syftesbeskrivningen.`;
 
-  const user = `VARFÖR: ${why1}\nEFFEKT: ${why2}${feedback ? `\nTIDIGARE FEEDBACK: ${feedback}` : ""}`;
+Din uppgift:
+Formulera en tydlig och inspirerande syftesbeskrivning för ett event – baserat på användarens input.
+
+Språkliga krav:
+- Max 50 ord
+- Max 2 meningar
+- Använd enkelt, vardagligt språk
+- Undvik fluff, metaforer, slogans och abstrakta begrepp
+- Undvik långa uppräkningar
+- Undvik att inleda med "Vårt syfte är att…" eller "Vi vill…"
+- Undvik att upprepa eventnamn eller tema om det redan är känt
+- Utgå från faktiska formuleringar i användarens input (inte antaganden)
+
+Ton:
+- Konkret och begriplig
+- Trovärdig, inte uppblåst
+- Hellre underdriven än överdriven
+
+Om tidigare deltagarfeedback finns, väg in den – men blanda inte in åtgärdsspråk, utan håll dig till intention och effekt.
+
+Svara ENDAST med den färdiga syftesbeskrivningen.`;
+
+  const user = `VARFÖR: ${why1}
+EFFEKT: ${why2}${feedback ? `\nTIDIGARE FEEDBACK: ${feedback}` : ""}`;
 
   const rsp = await client.chat.completions.create({
     model: "gpt-4o",
@@ -179,7 +199,7 @@ Svara ENDAST med själva syftesbeskrivningen.`;
       { role: "system", content: system },
       { role: "user", content: user }
     ],
-    temperature: 0.4
+    temperature: 0.3
   });
 
   return rsp.choices[0].message.content?.trim() || "";
@@ -300,45 +320,63 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    /* -------------------- STEP: purpose -------------------- */
-    if (step === "clarify" && field === "purpose") {
-      if (!state.purpose_why1) {
-        return res.json({
-          ok: true,
-          ui: [{ role: "assistant", text: "Börja med att kort beskriva varför det här eventet planeras." }],
-          next_step: "clarify",
-          state: { ...state }
-        });
-      }
-      if (!state.purpose_why2) {
-        return res.json({
-          ok: true,
-          ui: [{ role: "assistant", text: "Beskriv kort vilka effekter eller nyttor ni hoppas uppnå, både under och efter eventet." }],
-          next_step: "clarify",
-          state: { ...state, purpose_why1: state.purpose_why1 || input }
-        });
-      }
+ /* -------------------- STEP: purpose -------------------- */
+if (step === "clarify" && field === "purpose") {
+  // Fråga 1: varför eventet planeras
+  if (!state.purpose_why1 && !state.purpose_why2) {
+    return res.json({
+      ok: true,
+      ui: [{
+        role: "assistant",
+        text: "Börja med att kort beskriva varför det här eventet planeras."
+      }],
+      next_step: "clarify",
+      state: { ...state }
+    });
+  }
 
-      const feedback = state.previous_feedback || context.previous_feedback || "";
-      const proposal = await synthesizePurpose(state.purpose_why1, state.purpose_why2 || input, feedback);
+  // Fråga 2: vilken effekt eller nytta som önskas
+  if (state.purpose_why1 && !state.purpose_why2) {
+    return res.json({
+      ok: true,
+      ui: [{
+        role: "assistant",
+        text: "Beskriv kort vilka effekter eller nyttor ni hoppas uppnå, både under och efter eventet."
+      }],
+      next_step: "clarify",
+      state: { ...state, purpose_why1: state.purpose_why1 || input }
+    });
+  }
 
-      return res.json({
-        ok: true,
-        ui: [{
-          role: "assistant",
-          text: "Förslag på syftesbeskrivning:",
-          value: proposal,
-          actions: [
-            { text: "Använd denna", action: "finalize", value: proposal },
-            { text: "Justera", action: "refine" },
-            { text: "Nytt förslag", action: "refine" },
-            { text: "Redigera", action: "edit" }
-          ]
-        }],
-        next_step: "propose",
-        state: { ...state, last_proposal: proposal }
-      });
+  // När båda WHY-svaren finns – generera förslag
+  const why1 = state.purpose_why1 || input || "";
+  const why2 = state.purpose_why2 || "";
+  const feedback = state.previous_feedback || context.previous_feedback || "";
+
+  const proposal = await synthesizePurpose(why1, why2, feedback);
+
+  return res.json({
+    ok: true,
+    ui: [{
+      role: "assistant",
+      text: "Förslag på syftesbeskrivning:",
+      value: proposal,
+      actions: [
+        { text: "Använd denna", action: "finalize", value: proposal },
+        { text: "Justera", action: "ask_refinement" },
+        { text: "Nytt förslag", action: "refine" },
+        { text: "Redigera", action: "edit" }
+      ]
+    }],
+    next_step: "propose",
+    state: {
+      ...state,
+      purpose_why1: why1,
+      purpose_why2: why2,
+      last_proposal: proposal
     }
+  });
+}
 
     /* -------------------- FINALIZE -------------------- */
     if (step === "finalize") {
