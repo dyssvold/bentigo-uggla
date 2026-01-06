@@ -203,7 +203,7 @@ Svara ENDAST med syftesbeskrivningen.
 Inga rubriker. Inga listor. Inga förklaringar.
 `;
 
-  const user = `VARFÖR: ${why1}
+  const userBase = `VARFÖR: ${why1}
 NYTTA / EFFEKT: ${why2}${feedback ? `\nTIDIGARE FEEDBACK: ${feedback}` : ""}`;
 
   // ---------- Första försök ----------
@@ -211,7 +211,7 @@ NYTTA / EFFEKT: ${why2}${feedback ? `\nTIDIGARE FEEDBACK: ${feedback}` : ""}`;
     model: "gpt-4o",
     messages: [
       { role: "system", content: baseSystem },
-      { role: "user", content: user }
+      { role: "user", content: userBase }
     ],
     temperature: 0.25
   });
@@ -224,32 +224,71 @@ NYTTA / EFFEKT: ${why2}${feedback ? `\nTIDIGARE FEEDBACK: ${feedback}` : ""}`;
 
   // ---------- Fallback: extremt strikt omtag ----------
   const fallbackSystem = `
-DU FÖLJDE INTE INSTRUKTIONERNA.
+DU HAR MISSLYCKATS MED ATT FÖLJA INSTRUKTIONERNA.
 
-KORRIGERA OMEDELBART.
+DU SKA NU GÖRA EXAKT DETTA – INGET ANNAT:
 
-REGLER (ABSOLUTA):
-- Exakt 1–2 meningar
-- Max 50 ord
+UPPGIFT:
+Skapa EN (1) kort text som ska klistras in i ett formulärfält med rubriken:
+"Syfte"
+
+TEXTKRAV (MÅSTE FÖLJAS):
+- Max 40 ord
+- Exakt 1 eller 2 meningar
 - Endast löpande text
-- Inga kolon, inga radbrytningar
-- Inga siffror eller procentsatser
-- Inga ord som: mål, effekt, mät, analys, säkerställa, implementera
-- Inga listor, inga rubriker
-- Inga metatexter
+- INGA radbrytningar
+- INGA rubriker
+- INGA punktlistor
+- INGA kolon
+- INGA citationstecken
+- INGA siffror
+- INGA procenttecken
+- INGA datum
+- INGA namn på event, teman eller rubriker
 
-TEXTEN SKA:
-- Börja med: "Syftet för detta event är att …"
-- Sammanfatta intentionen, inget mer
+START:
+Texten MÅSTE börja exakt med:
+"Syftet för detta event är att"
 
-Svara ENDAST med den korrigerade syftesbeskrivningen.
+ABSOLUT FÖRBJUDNA ORD OCH MÖNSTER:
+mål
+mät
+mäta
+mätbar
+resultat
+effekt
+uppföljning
+implementera
+säkerställa
+optimera
+analys
+förslag
+kommentar
+absolut
+här är
+syfte:
+mål:
+-
+
+DU FÅR INTE:
+- förklara
+- motivera
+- analysera
+- kommentera
+- skriva något före eller efter texten
+
+Svara ENDAST med texten som ska sparas i fältet.
+OM DU BRYTER MOT NÅGOT KRAV ÄR SVARET FEL.
 `;
+
+  const fallbackUser = userBase + `
+FÖRRA FÖRSLAGET FÖLJDE INTE INSTRUKTIONERNA. FÖLJ DEM EXAKT.`;
 
   const retryRsp = await client.chat.completions.create({
     model: "gpt-4o",
     messages: [
       { role: "system", content: fallbackSystem },
-      { role: "user", content: user }
+      { role: "user", content: fallbackUser }
     ],
     temperature: 0.1
   });
@@ -258,11 +297,21 @@ Svara ENDAST med den korrigerade syftesbeskrivningen.
 }
 
 function isPurposeValid(text: string): boolean {
-  const tooManySentences = text.split(".").filter(s => s.trim()).length > 2;
-  const hasForbiddenPatterns = /:|\n\n|[-•\d+]\.|[–—]/.test(text); // kolon, radbrytning, punktlista, tankstreck
-  const hasForbiddenWords = /\b(mål|mät|%|100|analys|hur|förslag|implementera|framgång|säkerställa|maximera|miljö|dagar|datum|checklista|enkät|målgrupp)\b/i.test(text);
+  if (!text) return false;
 
-  return !tooManySentences && !hasForbiddenPatterns && !hasForbiddenWords;
+  const sentences = text.split(".").filter(s => s.trim());
+  if (sentences.length > 2) return false;
+
+  const wordCount = text.trim().split(/\s+/).length;
+  if (wordCount > 50) return false;
+
+  const hasForbiddenPatterns =
+    /:|\n|\r|[-•\d+]\.|[–—]/.test(text);
+
+  const hasForbiddenWords =
+    /\b(mål|mät|%|100|analys|hur|förslag|implementera|framgång|säkerställa|maximera|datum|dagar|checklista|enkät|målgrupp)\b/i.test(text);
+
+  return !hasForbiddenPatterns && !hasForbiddenWords;
 }
 
 /* =========================================================
