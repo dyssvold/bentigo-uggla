@@ -169,24 +169,25 @@ async function synthesizePurpose(
   const system = `Du är Ollo, en svensk eventassistent.
 
 Din uppgift:
-Formulera en tydlig och inspirerande syftesbeskrivning för ett event – baserat på användarens input.
+Formulera en syftesbeskrivning för ett kommande event, baserat på användarens input.
 
-Språkliga krav:
+🧠 Omfattning:
+- Skriv endast en kort syftesbeskrivning, inte mål, effekter eller uppföljning.
+- Använd löpande text, inte rubriker, listor eller punktform.
+- Om tidigare feedback finns, använd den som inspiration, inte som problembeskrivning.
+
+✍️ Format:
 - Max 50 ord
 - Max 2 meningar
-- Använd enkelt, vardagligt språk
-- Undvik fluff, metaforer, slogans och abstrakta begrepp
-- Undvik långa uppräkningar
-- Undvik att inleda med "Vårt syfte är att…" eller "Vi vill…"
-- Undvik att upprepa eventnamn eller tema om det redan är känt
-- Utgå från faktiska formuleringar i användarens input (inte antaganden)
+- Enbart löpande brödtext
+- Undvik att börja med “Syftet är att…”, “Vi vill…” eller liknande fraser
+- Undvik namn på eventet eller teman som redan är kända
 
-Ton:
-- Konkret och begriplig
-- Trovärdig, inte uppblåst
-- Hellre underdriven än överdriven
-
-Om tidigare deltagarfeedback finns, väg in den – men blanda inte in åtgärdsspråk, utan håll dig till intention och effekt.
+🗣️ Ton:
+- Enkelt, vardagligt språk
+- Tydligt och konkret
+- Undvik fluff, abstrakta ord, slogans eller överdrifter
+- Ingen värdeladdad retorik eller marknadsföringsspråk
 
 Svara ENDAST med den färdiga syftesbeskrivningen.`;
 
@@ -322,8 +323,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 /* -------------------- STEP: purpose -------------------- */
 if (step === "clarify" && field === "purpose") {
-  // Fråga 1: varför eventet planeras
-  if (!state.purpose_why1 && !state.purpose_why2) {
+  // Steg 1: användaren har inte besvarat någon fråga ännu
+  if (!state.purpose_why1 && !state.purpose_why2 && !input) {
     return res.json({
       ok: true,
       ui: [{
@@ -335,8 +336,8 @@ if (step === "clarify" && field === "purpose") {
     });
   }
 
-  // Fråga 2: vilken effekt eller nytta som önskas
-  if (state.purpose_why1 && !state.purpose_why2) {
+  // Steg 2: spara svaret på fråga 1 (VARFÖR), ställ fråga 2 (EFFEKT)
+  if (!state.purpose_why1 && input) {
     return res.json({
       ok: true,
       ui: [{
@@ -344,13 +345,18 @@ if (step === "clarify" && field === "purpose") {
         text: "Beskriv kort vilka effekter eller nyttor ni hoppas uppnå, både under och efter eventet."
       }],
       next_step: "clarify",
-      state: { ...state, purpose_why1: state.purpose_why1 || input }
+      state: { ...state, purpose_why1: input }
     });
   }
 
-  // När båda WHY-svaren finns – generera förslag
+  // Steg 3: nu borde vi ha både WHY1 och WHY2 – generera syftesförslag
   const why1 = state.purpose_why1 || "";
   const why2 = state.purpose_why2 || input || "";
+
+  if (!why2) {
+    return res.status(400).json({ error: "Saknar input till syftesbeskrivningens effekt/nytta" });
+  }
+
   const feedback = state.previous_feedback || context.previous_feedback || "";
 
   const proposal = await synthesizePurpose(why1, why2, feedback);
