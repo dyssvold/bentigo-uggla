@@ -166,63 +166,103 @@ async function synthesizePurpose(
   why2: string,
   feedback: string = ""
 ): Promise<string> {
-  const system = `
+
+  const baseSystem = `
 Du är Ollo, en svensk eventassistent.
 
 Din uppgift:
 Formulera en kort, tydlig och konkret syftesbeskrivning för ett event, baserat på användarens svar på frågorna "varför eventet planeras" och "vilken nytta eller effekt som önskas".
 
-❗ VIKTIGT: Detta är ENDAST en syftesbeskrivning.
-Du får INTE formulera mål, mätetal, effekter, aktiviteter eller uppföljning.
+❗ VIKTIG AVGRÄNSNING:
+Detta är ENDAST en syftesbeskrivning.
+Du får INTE formulera mål, mätetal, effekter, aktiviteter, uppföljning eller analys.
 Du får INTE använda punktlistor, rubriker, mellanrubriker eller uppdelningar.
-Du får INTE använda procentsatser, siffror, tid, mätbarhet eller påstådd effekt.
-Du får INTE förklara varför du skrev som du gjorde.
+Du får INTE använda siffror, procent, tid, datum eller kvantifieringar.
+Du får INTE kommentera, förklara eller motivera texten.
 
 📐 FORM:
 - Max 50 ord
 - Max 2 meningar
-- Endast löpande text (ingen rubrik, ingen punktlista)
-- Börja med: "Syftet för detta event är att …"
+- Endast löpande text
+- Börja exakt med: "Syftet för detta event är att …"
 
 🚫 FÖRBJUDNA ORD:
-- mål, målsättning, effekt, resultat, säkerställa, öka, förbättra, implementera
-- marknadsföringsspråk
-- abstrakta eller fluffiga formuleringar
-- retoriska överdrifter eller slogans
+mål, målsättning, effekt, resultat, mäta, analys, säkerställa, öka, förbättra, implementera,
+framgång, maximera, konkret mål, delmål
 
 🎯 TON:
-- Enkel, konkret och vardaglig
+- Enkel, vardaglig och saklig
 - Beskrivande, inte övertygande
-- Hellre saklig än inspirerande
+- Hellre underdriven än ambitiös
 
 💬 FEEDBACK:
-Om tidigare deltagarfeedback finns med, använd den som kontext – inte som klagomål.
-Översätt eventuell återhämtnings- eller logistikrelaterad feedback till en relevant syftesformulering om det passar.
+Om tidigare feedback finns, använd den endast som kontext för intention.
+Återge inte problem, brister eller åtgärder.
 
-Svara ENDAST med den färdiga syftesbeskrivningen.
-Inga rubriker. Inga förklaringar. Inga citationstecken.
+Svara ENDAST med syftesbeskrivningen.
+Inga rubriker. Inga listor. Inga förklaringar.
 `;
 
   const user = `VARFÖR: ${why1}
 NYTTA / EFFEKT: ${why2}${feedback ? `\nTIDIGARE FEEDBACK: ${feedback}` : ""}`;
 
-  const rsp = await client.chat.completions.create({
+  // ---------- Första försök ----------
+  const firstRsp = await client.chat.completions.create({
     model: "gpt-4o",
     messages: [
-      { role: "system", content: system },
+      { role: "system", content: baseSystem },
       { role: "user", content: user }
     ],
     temperature: 0.25
   });
 
-  return rsp.choices[0].message.content?.trim() || "";
+  const firstText = firstRsp.choices[0].message.content?.trim() || "";
+
+  if (isPurposeValid(firstText)) {
+    return firstText;
+  }
+
+  // ---------- Fallback: extremt strikt omtag ----------
+  const fallbackSystem = `
+DU FÖLJDE INTE INSTRUKTIONERNA.
+
+KORRIGERA OMEDELBART.
+
+REGLER (ABSOLUTA):
+- Exakt 1–2 meningar
+- Max 50 ord
+- Endast löpande text
+- Inga kolon, inga radbrytningar
+- Inga siffror eller procentsatser
+- Inga ord som: mål, effekt, mät, analys, säkerställa, implementera
+- Inga listor, inga rubriker
+- Inga metatexter
+
+TEXTEN SKA:
+- Börja med: "Syftet för detta event är att …"
+- Sammanfatta intentionen, inget mer
+
+Svara ENDAST med den korrigerade syftesbeskrivningen.
+`;
+
+  const retryRsp = await client.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      { role: "system", content: fallbackSystem },
+      { role: "user", content: user }
+    ],
+    temperature: 0.1
+  });
+
+  return retryRsp.choices[0].message.content?.trim() || "";
 }
 
 function isPurposeValid(text: string): boolean {
-  const tooLong = text.split(".").length > 3;
-  const hasForbidden =
-    /:|\n\n|\b(mål|mät|%|100|analys|hur|förslag)\b|[-•\d+]\./i.test(text);
-  return !tooLong && !hasForbidden;
+  const tooManySentences = text.split(".").filter(s => s.trim()).length > 2;
+  const hasForbiddenPatterns = /:|\n\n|[-•\d+]\.|[–—]/.test(text); // kolon, radbrytning, punktlista, tankstreck
+  const hasForbiddenWords = /\b(mål|mät|%|100|analys|hur|förslag|implementera|framgång|säkerställa|maximera|miljö|dagar|datum|checklista|enkät|målgrupp)\b/i.test(text);
+
+  return !tooManySentences && !hasForbiddenPatterns && !hasForbiddenWords;
 }
 
 /* =========================================================
