@@ -145,7 +145,9 @@ function formatFeedback(tags: string[], custom?: string) {
 }
 
 function hasValidPreviousFeedbackStyle(text: string): boolean {
-  const forbidden = /\b(förbättra|planera|säkerställ|öka|minska|inkludera|åtgärda)\b/i;
+  const forbidden =
+    /\b(förbättra|planera|säkerställ|öka|minska|inkludera|åtgärda|prioritera|optimera|ska|bör|behöver)\b/i;
+
   return (
     text.startsWith("Upplevelser från tidigare eller liknande event:") &&
     !forbidden.test(text)
@@ -159,25 +161,26 @@ async function proposePreviousFeedbackSummary(
   const system = `
 Du är Ollo.
 
-Din uppgift är att beskriva upplevelser från tidigare eller liknande event,
-baserat ENBART på användarens synpunkter.
+Användarens input består av tidigare synpunkter i form av taggar.
+
+Din uppgift är att sammanfatta hur eventen UPPLEVTS,
+baserat ENDAST på dessa synpunkter.
 
 SPRÅKLIGA KRAV:
-- Beskriv hur eventen upplevdes
-- Använd observerande, beskrivande språk
-- Använd inte förbättrings- eller åtgärdsspråk
-- Inga rekommendationer, inga slutsatser
+- Beskriv upplevelser, inte åtgärder
+- Använd observerande, återberättande språk
+- Ingen rådgivning, inga rekommendationer
+- Ingen orsak–verkan-argumentation
 
 ABSOLUT FÖRBUD:
-- Ord som: förbättra, planera, säkerställ, öka, minska, åtgärda
-- Orsak–verkan-formuleringar
-- Värderande språk
+förbättra, planera, säkerställ, öka, minska, inkludera, åtgärda,
+prioritera, optimera, ska, bör, behöver, för att, i syfte att
 
 FORM:
 - Max 60 ord
 - Löpande text
-- Exakt denna inledning:
-  "Upplevelser från tidigare eller liknande event:"
+- MÅSTE börja exakt så här:
+"Upplevelser från tidigare eller liknande event:"
 
 ${correctionNote}
 
@@ -288,7 +291,7 @@ export default async function handler(
     }
 
     /* =====================================================
-       STEG 5 – TIDIGARE SYNPUNKTER (FÖRBÄTTRAT)
+       STEG 5 – TIDIGARE SYNPUNKTER
        ===================================================== */
 
     if (step === "clarify" && field === "previous_feedback") {
@@ -302,7 +305,7 @@ export default async function handler(
       if (!hasValidPreviousFeedbackStyle(summary)) {
         summary = await proposePreviousFeedbackSummary(
           tags,
-          "DU ANVÄNDE ÅTGÄRDSSPRÅK ELLER FEL TON. BESKRIV ENDAST UPPLEVELSER."
+          "DU ANVÄNDE FEL TON ELLER ÅTGÄRDSSPRÅK. BESKRIV ENDAST UPPLEVELSER."
         );
       }
 
@@ -325,7 +328,7 @@ export default async function handler(
     }
 
     /* =====================================================
-       FINALIZE (gemensam)
+       FINALIZE (GEMENSAM)
        ===================================================== */
 
     if (step === "finalize") {
