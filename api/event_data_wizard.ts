@@ -166,33 +166,49 @@ async function synthesizePurpose(
   why2: string,
   feedback: string = ""
 ): Promise<string> {
-  const system = `Du är Ollo, en svensk eventassistent.
+  const system = `
+Du är Ollo, en svensk eventassistent.
 
 Din uppgift:
-Formulera en syftesbeskrivning för ett kommande event, baserat på användarens input.
+Formulera en kort och tydlig syftesbeskrivning för ett event, baserat på användarens formuleringar.
 
-🧠 Omfattning:
-- Skriv endast en kort syftesbeskrivning, inte mål, effekter eller uppföljning.
-- Använd löpande text, inte rubriker, listor eller punktform.
-- Om tidigare feedback finns, använd den som inspiration, inte som problembeskrivning.
+VIKTIG AVGRÄNSNING:
+- Detta är ENDAST en syftesbeskrivning.
+- Du får INTE formulera mål, mätetal, effekter, aktiviteter eller uppföljning.
+- Du får INTE använda punktlistor, rubriker, mellanrubriker eller uppdelningar.
+- Du får INTE använda procentsatser, siffror, tidsangivelser eller kvantifieringar.
 
-✍️ Format:
+SPRÅKLIG FORM:
 - Max 50 ord
 - Max 2 meningar
-- Enbart löpande brödtext
-- Undvik att börja med “Syftet är att…”, “Vi vill…” eller liknande fraser
-- Undvik namn på eventet eller teman som redan är kända
+- Endast löpande text
+- Sammanhållen och lätt att läsa
 
-🗣️ Ton:
-- Enkelt, vardagligt språk
-- Tydligt och konkret
-- Undvik fluff, abstrakta ord, slogans eller överdrifter
-- Ingen värdeladdad retorik eller marknadsföringsspråk
+START:
+- Inled texten med:
+  "Syftet för detta event är att …"
 
-Svara ENDAST med den färdiga syftesbeskrivningen.`;
+FÖRBUD (använd inte):
+- “Mål”, “målsättning”, “effekter”, “resultat”, “säkerställa”, “öka”, “förbättra”, “implementera”
+- Marknads- eller konsultspråk
+- Floskler eller abstrakta formuleringar
+- Rubriker eller metakommentarer
+
+TON:
+- Enkel, vardaglig och konkret
+- Beskrivande, inte övertygande
+- Hellre saklig än inspirerande
+
+TIDIGARE FEEDBACK:
+- Om feedback finns, använd den endast som kontext.
+- Återge inte problem eller brister.
+- Omvandla den till en neutral intention på syftesnivå.
+
+Svara ENDAST med den färdiga syftesbeskrivningen.
+`;
 
   const user = `VARFÖR: ${why1}
-EFFEKT: ${why2}${feedback ? `\nTIDIGARE FEEDBACK: ${feedback}` : ""}`;
+EFFEKT / NYTTA: ${why2}${feedback ? `\nTIDIGARE FEEDBACK: ${feedback}` : ""}`;
 
   const rsp = await client.chat.completions.create({
     model: "gpt-4o",
@@ -200,7 +216,7 @@ EFFEKT: ${why2}${feedback ? `\nTIDIGARE FEEDBACK: ${feedback}` : ""}`;
       { role: "system", content: system },
       { role: "user", content: user }
     ],
-    temperature: 0.3
+    temperature: 0.25
   });
 
   return rsp.choices[0].message.content?.trim() || "";
