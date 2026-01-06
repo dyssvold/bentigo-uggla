@@ -320,7 +320,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
- /* -------------------- STEP: purpose -------------------- */
+/* -------------------- STEP: purpose -------------------- */
 if (step === "clarify" && field === "purpose") {
   // Fråga 1: varför eventet planeras
   if (!state.purpose_why1 && !state.purpose_why2) {
@@ -349,8 +349,8 @@ if (step === "clarify" && field === "purpose") {
   }
 
   // När båda WHY-svaren finns – generera förslag
-  const why1 = state.purpose_why1 || input || "";
-  const why2 = state.purpose_why2 || "";
+  const why1 = state.purpose_why1 || "";
+  const why2 = state.purpose_why2 || input || "";
   const feedback = state.previous_feedback || context.previous_feedback || "";
 
   const proposal = await synthesizePurpose(why1, why2, feedback);
