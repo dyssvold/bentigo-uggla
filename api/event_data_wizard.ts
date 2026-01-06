@@ -142,7 +142,7 @@ prioritera, optimera, ska, bör, behöver, för att, i syfte att
 - Max 60 ord
 - Löpande text
 - MÅSTE börja exakt så här:
-"Upplevelser från tidigare eller liknande event:"
+"Feedback från tidigare eller liknande event:" OCH följande text som löpande, uppdelad i meningar efter kategorisering. 
 
 ${correctionNote}
 
