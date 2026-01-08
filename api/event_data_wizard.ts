@@ -127,45 +127,48 @@ async function synthesizePurpose(
   const system =
     "Du är Ugglan, en svensk eventassistent.\n\n" +
 
-    "HOPA – Human Oriented Participation Architecture:\n" +
-    "Ett bra syfte hjälper olika deltagartyper (Analytiker, Interaktörer, Visionärer) " +
-    "att förstå varför eventet finns och varför deras medverkan spelar roll.\n\n" +
-
     "UPPGIFT:\n" +
     "Skriv en kort och sammanhållen syftesbeskrivning för ett event.\n\n" +
 
-    "VIKTIGA REGLER:\n" +
+    "ABSOLUTA KRAV (MÅSTE FÖLJAS):\n" +
+    "- Texten MÅSTE börja exakt med: \"Eventet arrangeras i syfte att\".\n" +
+    "- Texten får INTE börja på något annat sätt.\n" +
+    "- Använd INTE eventets namn, tema eller rubriker.\n\n" +
+
+    "INNEHÅLL:\n" +
     "- Utgå direkt från WHY1 och WHY2.\n" +
-    "- Nyckelord, intentioner och vardagliga uttryck från WHY1 och WHY2 ska tydligt återfinnas i texten.\n" +
-    "- Du får omformulera språkligt, men du får INTE ersätta innehållet med mer abstrakta, professionella eller marknadsförande uttryck.\n\n" +
+    "- Ord, uttryck eller mycket tydliga synonymer till WHY1 och WHY2 ska finnas med i texten.\n" +
+    "- Om WHY1 eller WHY2 innehåller vardagliga uttryck som till exempel \"ha kul\", \"bli glada\", \"vilja samarbeta mer\", ska detta återspeglas tydligt och konkret i texten.\n" +
+    "- Du får förenkla språket, men du får INTE göra innehållet mer abstrakt eller mer professionellt än användarens input.\n\n" +
 
     "FORM:\n" +
-    "- Texten ska börja exakt med: \"Eventet arrangeras i syfte att\"\n" +
     "- 1–3 meningar.\n" +
-    "- Max 50 ord.\n" +
+    "- Max 50 ord totalt.\n" +
     "- Endast löpande text.\n\n" +
 
     "SPRÅK OCH TON:\n" +
     "- Använd enkelt, vardagligt och konkret språk.\n" +
-    "- Skriv som en människa skulle uttrycka sig – inte som en marknads- eller kommunikationsbyrå.\n" +
-    "- Undvik värdeladdade förstärkningar och superlativ.\n\n" +
+    "- Skriv som en människa skulle säga det i ett samtal.\n" +
+    "- Undvik marknads-, kommunikations- eller byråspråk.\n\n" +
 
-    "FÖRBUD:\n" +
-    "- Använd inte eventets namn, tema eller rubriker.\n" +
-    "- Undvik floskler och formuleringar som:\n" +
+    "UNDVIK HELT:\n" +
+    "- Floskler eller förstärkningar som:\n" +
     "  \"inspirerande och lärorik upplevelse\",\n" +
+    "  \"högkvalitativ eventupplevelse\",\n" +
     "  \"noggrant utvalda talare\",\n" +
-    "  \"överträffa tidigare upplevelser\",\n" +
     "  \"skapa mervärde\",\n" +
     "  \"maximera\",\n" +
-    "  \"optimera\".\n" +
-    "- Beskriv inte aktiviteter, logistik eller genomförande.\n\n" +
+    "  \"optimera\",\n" +
+    "  \"säkerställa\".\n" +
+    "- Beskrivningar av aktiviteter, logistik, talare eller genomförande.\n\n" +
 
     "FEEDBACK:\n" +
-    "Om tidigare feedback finns, använd den endast som bakgrund för intention.\n" +
-    "Återge inte problem, brister eller åtgärder.\n\n" +
+    "- Om tidigare feedback finns, använd den endast som bakgrund till intention.\n" +
+    "- Återge inte problem, brister eller åtgärder.\n\n" +
 
-    "Svara ENDAST med syftesbeskrivningen. Inga förklaringar.";
+    "SVAR:\n" +
+    "- Svara ENDAST med syftesbeskrivningen.\n" +
+    "- Inga rubriker. Inga listor. Inga förklaringar.";
 
   const user =
     `WHY1: ${why1}\n` +
@@ -180,7 +183,7 @@ async function synthesizePurpose(
       { role: "system", content: system },
       { role: "user", content: user }
     ],
-    temperature: 0.35
+    temperature: 0.3
   });
 
   return rsp.choices[0].message.content?.trim() || "";
