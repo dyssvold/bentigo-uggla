@@ -166,152 +166,38 @@ async function synthesizePurpose(
   why2: string,
   feedback: string = ""
 ): Promise<string> {
+  const system =
+    "Du är Ugglan, en svensk eventassistent.\n\n" +
+    "HOPA – Human Oriented Participation Architecture:\n" +
+    "Ett bra syfte hjälper olika deltagartyper (Analytiker, Interaktörer, Visionärer) " +
+    "att förstå varför eventet finns och varför deras medverkan spelar roll.\n\n" +
+    "Instruktion:\n" +
+    "- Förädla WHY1 och WHY2 till en tydlig och sammanhållen syftesbeskrivning.\n" +
+    "- Fokusera på intention och önskad riktning, inte på aktiviteter eller genomförande.\n" +
+    "- 1–3 meningar, max 50 ord.\n" +
+    "- Använd enkelt, vardagligt språk.\n" +
+    "- Undvik metaforer, slogans och fluff.\n\n" +
+    "Om tidigare deltagarfeedback finns, använd den som kontext för intention – " +
+    "inte som problemformulering.\n\n" +
+    "Skriv endast själva syftesbeskrivningen.";
 
-  const baseSystem = `
-Du är Ollo, en svensk eventassistent.
+  const user =
+    `WHY1: ${why1}\n` +
+    `WHY2: ${why2}` +
+    (feedback?.trim()
+      ? `\nTIDIGARE FEEDBACK: ${feedback.trim()}`
+      : "");
 
-Din uppgift:
-Formulera en kort, tydlig och konkret syftesbeskrivning för ett event, baserat på användarens svar på frågorna "varför eventet planeras" och "vilken nytta eller effekt som önskas".
-
-❗ VIKTIG AVGRÄNSNING:
-Detta är ENDAST en syftesbeskrivning.
-Du får INTE formulera mål, mätetal, effekter, aktiviteter, uppföljning eller analys.
-Du får INTE använda punktlistor, rubriker, mellanrubriker eller uppdelningar.
-Du får INTE använda siffror, procent, tid, datum eller kvantifieringar.
-Du får INTE kommentera, förklara eller motivera texten.
-
-📐 FORM:
-- Max 50 ord
-- Max 2 meningar
-- Endast löpande text
-- Börja exakt med: "Syftet för detta event är att …"
-
-🚫 FÖRBJUDNA ORD:
-mål, målsättning, effekt, resultat, mäta, analys, säkerställa, öka, förbättra, implementera,
-framgång, maximera, konkret mål, delmål
-
-🎯 TON:
-- Enkel, vardaglig och saklig
-- Beskrivande, inte övertygande
-- Hellre underdriven än ambitiös
-
-💬 FEEDBACK:
-Om tidigare feedback finns, använd den endast som kontext för intention.
-Återge inte problem, brister eller åtgärder.
-
-Svara ENDAST med syftesbeskrivningen.
-Inga rubriker. Inga listor. Inga förklaringar.
-`;
-
-  const userBase = `VARFÖR: ${why1}
-NYTTA / EFFEKT: ${why2}${feedback ? `\nTIDIGARE FEEDBACK: ${feedback}` : ""}`;
-
-  // ---------- Första försök ----------
-  const firstRsp = await client.chat.completions.create({
-    model: "gpt-4o",
+  const rsp = await client.chat.completions.create({
+    model: "gpt-4o-mini",
     messages: [
-      { role: "system", content: baseSystem },
-      { role: "user", content: userBase }
+      { role: "system", content: system },
+      { role: "user", content: user }
     ],
-    temperature: 0.25
+    temperature: 0.4
   });
 
-  const firstText = firstRsp.choices[0].message.content?.trim() || "";
-
-  if (isPurposeValid(firstText)) {
-    return firstText;
-  }
-
-  // ---------- Fallback: extremt strikt omtag ----------
-  const fallbackSystem = `
-DU HAR MISSLYCKATS MED ATT FÖLJA INSTRUKTIONERNA.
-
-DU SKA NU GÖRA EXAKT DETTA – INGET ANNAT:
-
-UPPGIFT:
-Skapa EN (1) kort text som ska klistras in i ett formulärfält med rubriken:
-"Syfte"
-
-TEXTKRAV (MÅSTE FÖLJAS):
-- Max 40 ord
-- Exakt 1 eller 2 meningar
-- Endast löpande text
-- INGA radbrytningar
-- INGA rubriker
-- INGA punktlistor
-- INGA kolon
-- INGA citationstecken
-- INGA siffror
-- INGA procenttecken
-- INGA datum
-- INGA namn på event, teman eller rubriker
-
-START:
-Texten MÅSTE börja exakt med:
-"Syftet för detta event är att"
-
-ABSOLUT FÖRBJUDNA ORD OCH MÖNSTER:
-mål
-mät
-mäta
-mätbar
-resultat
-effekt
-uppföljning
-implementera
-säkerställa
-optimera
-analys
-förslag
-kommentar
-absolut
-här är
-syfte:
-mål:
--
-
-DU FÅR INTE:
-- förklara
-- motivera
-- analysera
-- kommentera
-- skriva något före eller efter texten
-
-Svara ENDAST med texten som ska sparas i fältet.
-OM DU BRYTER MOT NÅGOT KRAV ÄR SVARET FEL.
-`;
-
-  const fallbackUser = userBase + `
-FÖRRA FÖRSLAGET FÖLJDE INTE INSTRUKTIONERNA. FÖLJ DEM EXAKT.`;
-
-  const retryRsp = await client.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      { role: "system", content: fallbackSystem },
-      { role: "user", content: fallbackUser }
-    ],
-    temperature: 0.1
-  });
-
-  return retryRsp.choices[0].message.content?.trim() || "";
-}
-
-function isPurposeValid(text: string): boolean {
-  if (!text) return false;
-
-  const sentences = text.split(".").filter(s => s.trim());
-  if (sentences.length > 2) return false;
-
-  const wordCount = text.trim().split(/\s+/).length;
-  if (wordCount > 50) return false;
-
-  const hasForbiddenPatterns =
-    /:|\n|\r|[-•\d+]\.|[–—]/.test(text);
-
-  const hasForbiddenWords =
-    /\b(mål|mät|%|100|analys|hur|förslag|implementera|framgång|säkerställa|maximera|datum|dagar|checklista|enkät|målgrupp)\b/i.test(text);
-
-  return !hasForbiddenPatterns && !hasForbiddenWords;
+  return rsp.choices[0].message.content?.trim() || "";
 }
 
 /* =========================================================
