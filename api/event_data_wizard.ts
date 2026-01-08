@@ -119,48 +119,6 @@ Svara ENDAST med texten.`;
   return rsp.choices[0].message.content?.trim() || "";
 }
 
-async function proposePreviousFeedbackSummary(tags: string[], correctionNote: string = "") {
-  const system = `Du är Ollo.
-
-Användarens input består av tidigare synpunkter i form av taggar.
-
-Din uppgift är att sammanfatta hur eventen UPPLEVTS, baserat ENDAST på dessa synpunkter.
-
-SPRÅKLIGA KRAV:
-- Beskriv upplevelser, inte åtgärder
-- Använd observerande och återberättande språk
-- Undvik värderingar, slutsatser och förslag
-- Inga orsak–verkan-konstruktioner
-
-ABSOLUT FÖRBUD:
-Ord som: förbättra, planera, säkerställ, öka, minska, inkludera, åtgärda,
-prioritera, optimera, ska, bör, behöver, för att, i syfte att
-
-STIL OCH FORM:
-- Gör inga omskrivningar eller stilistiska utsmyckningar
-- Sammanfoga närliggande taggar till tematiska beskrivningar
-- Fokusera på att förtydliga, förenkla och gruppera – inte att skriva om
-- Max 60 ord
-- Löpande text
-- MÅSTE börja exakt så här:
-"Feedback från tidigare eller liknande event:" OCH följande text som löpande, uppdelad i meningar efter kategorisering. 
-
-${correctionNote}
-
-Utgå ENDAST från följande synpunkter:
-"${tags.join(", ")}"
-
-Svara ENDAST med den färdiga texten.`;
-
-  const rsp = await client.chat.completions.create({
-    model: "gpt-4o",
-    messages: [{ role: "system", content: system }],
-    temperature: 0.25
-  });
-
-  return rsp.choices[0].message.content?.trim() || "";
-}
-
 async function synthesizePurpose(
   why1: string,
   why2: string,
@@ -174,11 +132,14 @@ async function synthesizePurpose(
     "Instruktion:\n" +
     "- Förädla WHY1 och WHY2 till en tydlig och sammanhållen syftesbeskrivning.\n" +
     "- Fokusera på intention och önskad riktning, inte på aktiviteter eller genomförande.\n" +
+    "- Texten ska börja med: 'Eventet arrangeras i syfte att'\n" +
     "- 1–3 meningar, max 50 ord.\n" +
     "- Använd enkelt, vardagligt språk.\n" +
-    "- Undvik metaforer, slogans och fluff.\n\n" +
-    "Om tidigare deltagarfeedback finns, använd den som kontext för intention – " +
-    "inte som problemformulering.\n\n" +
+    "- Undvik metaforer, slogans och fluff.\n" +
+    "- Använd inte eventets namn eller tema i texten.\n" +
+    "- Undvik uttryck som “inspirerande och lärorik upplevelse”, “noggrant utvalda talare”, “överträffa tidigare upplevelser”, “mervärde för varje individ” eller liknande förstärkningar.\n" +
+    "- Använd ett neutralt och konkret språk utan värdeladdning.\n\n" +
+    "Om tidigare deltagarfeedback finns, använd den som kontext för intention – inte som problemformulering.\n\n" +
     "Skriv endast själva syftesbeskrivningen.";
 
   const user =
