@@ -132,7 +132,7 @@ Du är Ugglan, en svensk eventassistent.
 Skriv en syftesbeskrivning som följer nedan mall, utan att lägga till annan information än det som kommer från WHY1 och WHY2.
 
 📐 MALL – ANVÄND DENNA STRUKTUR:
-Syfte är att … [baserat på WHY1, max 15 ord per mening, lägg till en andra mening som inleds med ”Dessutom …” om det behövs].
+Eventet arrangeras i syfte att … [baserat på WHY1, max 15 ord per mening, lägg till en andra mening som inleds med ”Dessutom …” om det behövs].
 Eventet ska också bidra till … [baserat på WHY2, max 15 ord per mening, lägg till en andra mening som inleds med ”Slutligen att …” om det behövs].
 
 🧱 FORMREGLER:
@@ -145,7 +145,7 @@ Eventet ska också bidra till … [baserat på WHY2, max 15 ord per mening, läg
 - Texten ska TYDLIGT spegla både WHY1 och WHY2
 - Använd enkla vardagliga ord – inte abstrakta, professionella eller marknadsförande formuleringar
 - Om WHY1 t.ex. är "ha kul" – använd "ha roligt", "trivas" eller "känna glädje"
-- Om WHY2 t.ex. är "vilja samarbeta mer" – använd "samarbeta mer", "jobba bättre ihop" eller "vilja samspela"
+- Om WHY2 t.ex. är "vilja samarbeta mer" – använd "samarbeta mer", "jobba bättre ihop" eller "vilja till att samarbeta"
 
 🚫 FÖRBJUDNA ORD:
 - inspirerande, lärorik, högkvalitativ, sömlös, effektivisera, optimera, maximera
@@ -169,37 +169,33 @@ Svara ENDAST med den färdiga syftesbeskrivningen. Inga rubriker, inga förklari
       ? `\nTIDIGARE FEEDBACK: ${feedback.trim()}`
       : "");
 
-  // Första försök
-  const first = await client.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user }
-    ],
-    temperature: 0.15
-  });
-
-  let text = first.choices[0].message.content?.trim() || "";
-
-  // Om svaret inte börjar korrekt eller är för kort/långt → försök igen med hård prompt
-  const wordCount = text.split(/\s+/).length;
-  const invalidStart = !text.startsWith("Eventet arrangeras i syfte att");
-  const invalidLength = wordCount < 20 || wordCount > 50;
-
-  if (invalidStart || invalidLength) {
-    const retry = await client.chat.completions.create({
+  const getGPTResponse = async (strict = false) => {
+    return await client.chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
           role: "system",
-          content: system + "\n\n⚠️ FÖRRA FÖRSLAGET FÖLJDE INTE INSTRUKTIONERNA. GÖR OM."
+          content: system + (strict ? "\n\n⚠️ FÖRRA FÖRSLAGET FÖLJDE INTE INSTRUKTIONERNA. GÖR OM." : "")
         },
         { role: "user", content: user }
       ],
-      temperature: 0.1
+      temperature: strict ? 0.1 : 0.15
     });
+  };
 
-    text = retry.choices[0].message.content?.trim() || "";
+  // Första försök
+  let rsp = await getGPTResponse();
+  let text = rsp.choices[0].message.content?.trim() || "";
+
+  // Validering
+  const wordCount = text.split(/\s+/).length;
+  const invalidStart = !text.startsWith("Eventet arrangeras i syfte att");
+  const invalidLength = wordCount < 20 || wordCount > 50;
+
+  // Fallback om start eller längd är fel
+  if (invalidStart || invalidLength) {
+    const retryRsp = await getGPTResponse(true);
+    text = retryRsp.choices[0].message.content?.trim() || "";
   }
 
   return text;
