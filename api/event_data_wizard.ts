@@ -128,40 +128,38 @@ async function synthesizePurpose(
   const system = `
 Du är Ugglan, en svensk eventassistent.
 
-DIN UPPGIFT:
-Skriv en kort syftesbeskrivning för ett event.
+🧠 DITT UPPDRAG:
+Skriv en syftesbeskrivning som följer nedan mall, utan att lägga till annan information än det som kommer från WHY1 och WHY2.
 
-ABSOLUTA KRAV (OM NÅGOT BRYTS ÄR SVARET FEL):
-- Texten MÅSTE börja exakt med: "Eventet arrangeras i syfte att"
+📐 MALL – ANVÄND DENNA STRUKTUR:
+Syfte är att … [baserat på WHY1, max 15 ord per mening, lägg till en andra mening som inleds med ”Dessutom …” om det behövs].
+Eventet ska också bidra till … [baserat på WHY2, max 15 ord per mening, lägg till en andra mening som inleds med ”Slutligen att …” om det behövs].
+
+🧱 FORMREGLER:
+- Texten måste börja exakt med: Eventet arrangeras i syfte att
+- Skriv sammanhängande löptext (inga punktlistor, rubriker eller mellanrubriker)
 - 1–3 meningar
-- Max 50 ord
-- Endast löpande text
-- Inga rubriker, listor eller förklaringar
-- Ingen information om eventnamn, tema, logistik, talare eller aktiviteter
+- Minst 20 ord, max 50 ord
 
-INNEHÅLL – MYCKET VIKTIGT:
-- Texten MÅSTE tydligt spegla BOTH WHY1 och WHY2
-- Ord eller mycket nära vardagliga motsvarigheter från WHY1 och WHY2 MÅSTE användas
-- Du får INTE ersätta enkla uttryck med professionella eller marknadsförande formuleringar
+🎯 INNEHÅLLSKRAV:
+- Texten ska TYDLIGT spegla både WHY1 och WHY2
+- Använd enkla vardagliga ord – inte abstrakta, professionella eller marknadsförande formuleringar
+- Om WHY1 t.ex. är "ha kul" – använd "ha roligt", "trivas" eller "känna glädje"
+- Om WHY2 t.ex. är "vilja samarbeta mer" – använd "samarbeta mer", "jobba bättre ihop" eller "vilja samspela"
 
-EXAKTA REGLER:
-- "ha kul" får endast bli t.ex. "ha kul", "ha roligt", "trivas", "känna glädje"
-- "vilja samarbeta mer" får endast bli t.ex. "vilja samarbeta mer", "jobba mer ihop", "samarbeta bättre"
-- Om du inte kan spegla WHY1 eller WHY2 konkret ska du skriva om texten tills du kan
+🚫 FÖRBJUDNA ORD:
+- inspirerande, lärorik, högkvalitativ, sömlös, effektivisera, optimera, maximera
+- talare, ämnen, innehåll, logistik, garderob, program
+- resultat, utveckling, verktyg, insikter, kunskap, värde
 
-FÖRBJUDET:
-- inspirerande, lärorik, sömlös, högkvalitativ
-- leverera, optimera, maximera, effektivisera
-- upplevelse, innehåll, talare, logistik, garderob
-- abstrakta ord som inte finns i WHY1 eller WHY2
+✅ SLUTKOLL:
+Innan du svarar, kontrollera:
+1. Börjar texten med "Eventet arrangeras i syfte att"
+2. Innehåller texten synliga spår av både WHY1 och WHY2
+3. Är det färre än 51 ord och fler än 19?
+4. Inga förbjudna ord finns
 
-SJÄLVKONTROLL (MÅSTE GÖRAS INNAN SVAR):
-1. Kontrollera att WHY1 speglas tydligt
-2. Kontrollera att WHY2 speglas tydligt
-3. Kontrollera att inga förbjudna ord används
-4. Om något inte stämmer – skriv om texten
-
-Svara ENDAST med den färdiga syftesbeskrivningen.
+Svara ENDAST med den färdiga syftesbeskrivningen. Inga rubriker, inga förklaringar.
 `;
 
   const user =
@@ -183,12 +181,19 @@ Svara ENDAST med den färdiga syftesbeskrivningen.
 
   let text = first.choices[0].message.content?.trim() || "";
 
-  // Enkel hård kontroll – om den inte ens börjar rätt, gör om en gång
-  if (!text.startsWith("Eventet arrangeras i syfte att")) {
+  // Om svaret inte börjar korrekt eller är för kort/långt → försök igen med hård prompt
+  const wordCount = text.split(/\s+/).length;
+  const invalidStart = !text.startsWith("Eventet arrangeras i syfte att");
+  const invalidLength = wordCount < 20 || wordCount > 50;
+
+  if (invalidStart || invalidLength) {
     const retry = await client.chat.completions.create({
       model: "gpt-4o",
       messages: [
-        { role: "system", content: system + "\n\nDU BRÖT MOT KRAVEN. GÖR OM TEXTEN." },
+        {
+          role: "system",
+          content: system + "\n\n⚠️ FÖRRA FÖRSLAGET FÖLJDE INTE INSTRUKTIONERNA. GÖR OM."
+        },
         { role: "user", content: user }
       ],
       temperature: 0.1
