@@ -124,39 +124,45 @@ async function synthesizePurpose(
   why2: string,
   feedback: string = ""
 ): Promise<string> {
-  const system =
-    "Du är Ugglan, en svensk eventassistent.\n\n" +
 
-    "🎯 UPPDRAG:\n" +
-    "Skriv en kort, tydlig syftesbeskrivning för ett event.\n\n" +
+  const system = `
+Du är Ugglan, en svensk eventassistent.
 
-    "🧱 MÅSTE UPPFYLLAS:\n" +
-    "- Börja exakt med: Eventet arrangeras i syfte att\n" +
-    "- 1–3 meningar, max 50 ord\n" +
-    "- Endast löpande text, inga listor eller rubriker\n" +
-    "- Ingen information om eventnamn, tema, logistik eller aktiviteter\n\n" +
+DIN UPPGIFT:
+Skriv en kort syftesbeskrivning för ett event.
 
-    "💬 INNEHÅLLSKRAV:\n" +
-    "- Texten ska tydligt spegla både WHY1 och WHY2\n" +
-    "- Använd ord eller mycket tydliga vardagliga motsvarigheter\n" +
-    "- Om WHY1 = “ha kul”, ska något liknande stå i texten (t.ex. ha roligt, skratta, trivas)\n" +
-    "- Om WHY2 = “vilja samarbeta mer”, ska det också speglas (t.ex. samarbeta bättre, jobba ihop, samspela)\n" +
-    "- Du får inte ersätta vardagliga uttryck med abstrakta, professionella eller marknadsförande formuleringar\n\n" +
+ABSOLUTA KRAV (OM NÅGOT BRYTS ÄR SVARET FEL):
+- Texten MÅSTE börja exakt med: "Eventet arrangeras i syfte att"
+- 1–3 meningar
+- Max 50 ord
+- Endast löpande text
+- Inga rubriker, listor eller förklaringar
+- Ingen information om eventnamn, tema, logistik, talare eller aktiviteter
 
-    "🚫 FÖRBJUDNA ORD OCH UTTRYCK:\n" +
-    "- inspirerande, lärorik, sömlös, högkvalitativ, handplockade, maximera, optimera\n" +
-    "- talare, ämnen, program, logistik, garderob, innehåll, upplevelse\n\n" +
+INNEHÅLL – MYCKET VIKTIGT:
+- Texten MÅSTE tydligt spegla BOTH WHY1 och WHY2
+- Ord eller mycket nära vardagliga motsvarigheter från WHY1 och WHY2 MÅSTE användas
+- Du får INTE ersätta enkla uttryck med professionella eller marknadsförande formuleringar
 
-    "📢 TON OCH STIL:\n" +
-    "- Skriv enkelt, vardagligt och konkret – som en människa skulle prata\n" +
-    "- Undvik floskler, slogans och förstärkningar\n\n" +
+EXAKTA REGLER:
+- "ha kul" får endast bli t.ex. "ha kul", "ha roligt", "trivas", "känna glädje"
+- "vilja samarbeta mer" får endast bli t.ex. "vilja samarbeta mer", "jobba mer ihop", "samarbeta bättre"
+- Om du inte kan spegla WHY1 eller WHY2 konkret ska du skriva om texten tills du kan
 
-    "🔍 SLUTKOLL:\n" +
-    "- Kontrollera att både WHY1 och WHY2 speglas tydligt i svaret\n" +
-    "- Om något saknas: skriv om innan du svarar\n\n" +
+FÖRBJUDET:
+- inspirerande, lärorik, sömlös, högkvalitativ
+- leverera, optimera, maximera, effektivisera
+- upplevelse, innehåll, talare, logistik, garderob
+- abstrakta ord som inte finns i WHY1 eller WHY2
 
-    "✉️ SVAR:\n" +
-    "Svara ENDAST med syftesbeskrivningen (inga förklaringar, inga rubriker).";
+SJÄLVKONTROLL (MÅSTE GÖRAS INNAN SVAR):
+1. Kontrollera att WHY1 speglas tydligt
+2. Kontrollera att WHY2 speglas tydligt
+3. Kontrollera att inga förbjudna ord används
+4. Om något inte stämmer – skriv om texten
+
+Svara ENDAST med den färdiga syftesbeskrivningen.
+`;
 
   const user =
     `WHY1: ${why1}\n` +
@@ -165,16 +171,33 @@ async function synthesizePurpose(
       ? `\nTIDIGARE FEEDBACK: ${feedback.trim()}`
       : "");
 
-  const rsp = await client.chat.completions.create({
-    model: "gpt-4o-mini",
+  // Första försök
+  const first = await client.chat.completions.create({
+    model: "gpt-4o",
     messages: [
       { role: "system", content: system },
       { role: "user", content: user }
     ],
-    temperature: 0.25
+    temperature: 0.15
   });
 
-  return rsp.choices[0].message.content?.trim() || "";
+  let text = first.choices[0].message.content?.trim() || "";
+
+  // Enkel hård kontroll – om den inte ens börjar rätt, gör om en gång
+  if (!text.startsWith("Eventet arrangeras i syfte att")) {
+    const retry = await client.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: system + "\n\nDU BRÖT MOT KRAVEN. GÖR OM TEXTEN." },
+        { role: "user", content: user }
+      ],
+      temperature: 0.1
+    });
+
+    text = retry.choices[0].message.content?.trim() || "";
+  }
+
+  return text;
 }
 
 /* =========================================================
