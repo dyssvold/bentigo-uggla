@@ -124,12 +124,11 @@ async function synthesizePurpose(
   why2: string,
   feedback: string = ""
 ): Promise<string> {
-
   const system = `
 Du är Ugglan, en svensk eventassistent.
 
 🧠 DITT UPPDRAG:
-Skriv en syftesbeskrivning som följer nedan mall, utan att lägga till annan information än det som kommer från WHY1 och WHY2.
+Du arbetar i transform‑läge. Det innebär att du INTE får hitta på ny information. Du ska ENDAST omformulera och strukturera WHY1 och WHY2 till en syftesbeskrivning enligt nedan mall.
 
 📐 MALL – ANVÄND DENNA STRUKTUR:
 Eventet arrangeras i syfte att … [baserat på WHY1, max 15 ord per mening, lägg till en andra mening som inleds med ”Dessutom …” om det behövs].
@@ -137,30 +136,34 @@ Eventet ska också bidra till … [baserat på WHY2, max 15 ord per mening, läg
 
 🧱 FORMREGLER:
 - Texten måste börja exakt med: Eventet arrangeras i syfte att
-- Skriv sammanhängande löptext (inga punktlistor, rubriker eller mellanrubriker)
 - 1–3 meningar
 - Minst 20 ord, max 50 ord
+- Endast löptext (inga listor, rubriker eller förklaringar)
 
 🎯 INNEHÅLLSKRAV:
-- Texten ska TYDLIGT spegla både WHY1 och WHY2
-- Använd enkla vardagliga ord – inte abstrakta, professionella eller marknadsförande formuleringar
-- Om WHY1 t.ex. är "ha kul" – använd "ha roligt", "trivas" eller "känna glädje"
-- Om WHY2 t.ex. är "vilja samarbeta mer" – använd "samarbeta mer", "jobba bättre ihop" eller "vilja till att samarbeta"
+- Texten måste tydligt spegla både WHY1 och WHY2
+- Använd vardagliga ord – inte abstrakta, marknadsförande eller professionella termer
+- Om WHY1 t.ex. är "ha kul" – använd "ha roligt", "trivas", "känna glädje"
+- Om WHY2 t.ex. är "vilja samarbeta mer" – använd "samarbeta mer", "jobba ihop", "vilja till att samarbeta"
 
-🚫 FÖRBJUDNA ORD:
+🚫 FÖRBJUDNA ORD (måste inte förekomma i texten):
 - inspirerande, lärorik, högkvalitativ, sömlös, effektivisera, optimera, maximera
 - talare, ämnen, innehåll, logistik, garderob, program
 - resultat, utveckling, verktyg, insikter, kunskap, värde
 
-Svara ENDAST med den färdiga syftesbeskrivningen.
-`;
+✅ SLUTKOLL INNAN DU SVARAR:
+1. Börjar texten med exakt rätt fras?
+2. Är texten mellan 20 och 50 ord?
+3. Innehåller texten ord från WHY1 och WHY2?
+4. Innehåller texten INTE något förbjudet ord?
+
+Svara ENDAST med den färdiga syftesbeskrivningen. Inga förklaringar.
+  `.trim();
 
   const user =
     `WHY1: ${why1}\n` +
     `WHY2: ${why2}` +
     (feedback?.trim() ? `\nTIDIGARE FEEDBACK: ${feedback.trim()}` : "");
-
-  /* ---------------- Valideringshjälpare ---------------- */
 
   const forbiddenRegex =
     /\b(inspirerande|lärorik|högkvalitativ|sömlös|effektivisera|optimera|maximera|talare|ämnen|innehåll|logistik|garderob|program|resultat|utveckling|verktyg|insikter|kunskap|värde)\b/i;
@@ -172,23 +175,21 @@ Svara ENDAST med den färdiga syftesbeskrivningen.
     const whyWords = normalize(why)
       .split(/\s+/)
       .filter(w => w.length > 3);
-
     const normalizedText = normalize(text);
     return whyWords.some(w => normalizedText.includes(w));
   };
 
   const isValid = (text: string): boolean => {
-    const words = text.split(/\s+/).length;
-    const startsCorrectly = text.startsWith("Eventet arrangeras i syfte att");
-    const lengthOk = words >= 20 && words <= 50;
-    const noForbidden = !forbiddenRegex.test(text);
-    const why1Ok = reflectsWhy(text, why1);
-    const why2Ok = reflectsWhy(text, why2);
-
-    return startsCorrectly && lengthOk && noForbidden && why1Ok && why2Ok;
+    const words = text.trim().split(/\s+/).length;
+    return (
+      text.startsWith("Eventet arrangeras i syfte att") &&
+      words >= 20 &&
+      words <= 50 &&
+      !forbiddenRegex.test(text) &&
+      reflectsWhy(text, why1) &&
+      reflectsWhy(text, why2)
+    );
   };
-
-  /* ---------------- GPT-anrop ---------------- */
 
   const getGPTResponse = async (strict = false) => {
     return await client.chat.completions.create({
@@ -196,7 +197,11 @@ Svara ENDAST med den färdiga syftesbeskrivningen.
       messages: [
         {
           role: "system",
-          content: system + (strict ? "\n\n⚠️ DU BRÖT MOT KRAVEN. GÖR OM EXAKT ENLIGT MALLEN." : "")
+          content:
+            system +
+            (strict
+              ? "\n\n⚠️ FÖRRA FÖRSLAGET FÖLJDE INTE MALLEN. GÖR OM EXAKT ENLIGT INSTRUKTIONERNA."
+              : "")
         },
         { role: "user", content: user }
       ],
@@ -204,19 +209,15 @@ Svara ENDAST med den färdiga syftesbeskrivningen.
     });
   };
 
-  /* ---------------- Försök med fallback ---------------- */
-
   const MAX_ATTEMPTS = 3;
   let attempt = 0;
   let text = "";
 
   while (attempt < MAX_ATTEMPTS) {
-    const strict = attempt > 0;
-    const rsp = await getGPTResponse(strict);
+    const rsp = await getGPTResponse(attempt > 0);
     text = rsp.choices[0].message.content?.trim() || "";
 
-    🔍 Avkommentera vid felsökning
-    console.log("GPT attempt", attempt + 1, text);
+    console.log("GPT attempt", attempt + 1, "→", text);
 
     if (isValid(text)) {
       return text;
@@ -225,8 +226,7 @@ Svara ENDAST med den färdiga syftesbeskrivningen.
     attempt++;
   }
 
-  /* ---------------- Sista utväg ---------------- */
-
+  console.warn("❌ GPT misslyckades. Använder fallback.");
   return (
     `Eventet arrangeras i syfte att deltagarna ska ha roligt tillsammans. ` +
     `Eventet ska också bidra till att de vill samarbeta mer med varandra.`
