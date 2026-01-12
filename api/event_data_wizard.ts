@@ -152,22 +152,43 @@ Eventet ska också bidra till … [baserat på WHY2, max 15 ord per mening, läg
 - talare, ämnen, innehåll, logistik, garderob, program
 - resultat, utveckling, verktyg, insikter, kunskap, värde
 
-✅ SLUTKOLL:
-Innan du svarar, kontrollera:
-1. Börjar texten med "Eventet arrangeras i syfte att"
-2. Innehåller texten synliga spår av både WHY1 och WHY2
-3. Är det färre än 51 ord och fler än 19?
-4. Inga förbjudna ord finns
-
-Svara ENDAST med den färdiga syftesbeskrivningen. Inga rubriker, inga förklaringar.
+Svara ENDAST med den färdiga syftesbeskrivningen.
 `;
 
   const user =
     `WHY1: ${why1}\n` +
     `WHY2: ${why2}` +
-    (feedback?.trim()
-      ? `\nTIDIGARE FEEDBACK: ${feedback.trim()}`
-      : "");
+    (feedback?.trim() ? `\nTIDIGARE FEEDBACK: ${feedback.trim()}` : "");
+
+  /* ---------------- Valideringshjälpare ---------------- */
+
+  const forbiddenRegex =
+    /\b(inspirerande|lärorik|högkvalitativ|sömlös|effektivisera|optimera|maximera|talare|ämnen|innehåll|logistik|garderob|program|resultat|utveckling|verktyg|insikter|kunskap|värde)\b/i;
+
+  const normalize = (s: string) =>
+    s.toLowerCase().replace(/[^\wåäö\s]/gi, "");
+
+  const reflectsWhy = (text: string, why: string) => {
+    const whyWords = normalize(why)
+      .split(/\s+/)
+      .filter(w => w.length > 3);
+
+    const normalizedText = normalize(text);
+    return whyWords.some(w => normalizedText.includes(w));
+  };
+
+  const isValid = (text: string): boolean => {
+    const words = text.split(/\s+/).length;
+    const startsCorrectly = text.startsWith("Eventet arrangeras i syfte att");
+    const lengthOk = words >= 20 && words <= 50;
+    const noForbidden = !forbiddenRegex.test(text);
+    const why1Ok = reflectsWhy(text, why1);
+    const why2Ok = reflectsWhy(text, why2);
+
+    return startsCorrectly && lengthOk && noForbidden && why1Ok && why2Ok;
+  };
+
+  /* ---------------- GPT-anrop ---------------- */
 
   const getGPTResponse = async (strict = false) => {
     return await client.chat.completions.create({
@@ -175,30 +196,41 @@ Svara ENDAST med den färdiga syftesbeskrivningen. Inga rubriker, inga förklari
       messages: [
         {
           role: "system",
-          content: system + (strict ? "\n\n⚠️ FÖRRA FÖRSLAGET FÖLJDE INTE INSTRUKTIONERNA. GÖR OM." : "")
+          content: system + (strict ? "\n\n⚠️ DU BRÖT MOT KRAVEN. GÖR OM EXAKT ENLIGT MALLEN." : "")
         },
         { role: "user", content: user }
       ],
-      temperature: strict ? 0.1 : 0.15
+      temperature: strict ? 0.05 : 0.15
     });
   };
 
-  // Första försök
-  let rsp = await getGPTResponse();
-  let text = rsp.choices[0].message.content?.trim() || "";
+  /* ---------------- Försök med fallback ---------------- */
 
-  // Validering
-  const wordCount = text.split(/\s+/).length;
-  const invalidStart = !text.startsWith("Eventet arrangeras i syfte att");
-  const invalidLength = wordCount < 20 || wordCount > 50;
+  const MAX_ATTEMPTS = 3;
+  let attempt = 0;
+  let text = "";
 
-  // Fallback om start eller längd är fel
-  if (invalidStart || invalidLength) {
-    const retryRsp = await getGPTResponse(true);
-    text = retryRsp.choices[0].message.content?.trim() || "";
+  while (attempt < MAX_ATTEMPTS) {
+    const strict = attempt > 0;
+    const rsp = await getGPTResponse(strict);
+    text = rsp.choices[0].message.content?.trim() || "";
+
+    // 🔍 Avkommentera vid felsökning
+    // console.log("GPT attempt", attempt + 1, text);
+
+    if (isValid(text)) {
+      return text;
+    }
+
+    attempt++;
   }
 
-  return text;
+  /* ---------------- Sista utväg ---------------- */
+
+  return (
+    `Eventet arrangeras i syfte att deltagarna ska ha roligt tillsammans. ` +
+    `Eventet ska också bidra till att de vill samarbeta mer med varandra.`
+  );
 }
 
 /* =========================================================
