@@ -215,8 +215,8 @@ Svara ENDAST med den färdiga syftesbeskrivningen.
     const rsp = await getGPTResponse(strict);
     text = rsp.choices[0].message.content?.trim() || "";
 
-    // 🔍 Avkommentera vid felsökning
-    // console.log("GPT attempt", attempt + 1, text);
+    🔍 Avkommentera vid felsökning
+    console.log("GPT attempt", attempt + 1, text);
 
     if (isValid(text)) {
       return text;
